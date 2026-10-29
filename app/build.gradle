@@ -1,0 +1,26 @@
+plugins {
+    id 'com.android.application'
+    id 'com.chaquo.python'
+}
+android {
+    namespace 'com.gallofok.instasaver'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.gallofok.instasaver'
+        minSdk 29
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+        ndk { abiFilters 'arm64-v8a' }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+chaquopy {
+    defaultConfig {
+        version '3.11'
+        pip { install 'yt-dlp' }
+    }
+}
