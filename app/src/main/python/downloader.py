@@ -55,6 +55,106 @@ def normalize_supported_url(value):
     return normalize_instagram_url(value), "instagram"
 
 
+def choose_shorts_formats(formats):
+    """Choose a compatible combined file or a MP4 + M4A pair for Android muxing."""
+    candidates = [item for item in (formats or [])
+                  if item.get("format_id") and item.get("url")
+                  and not item.get("has_drm")]
+
+    def video(item):
+        return item.get("vcodec") not in (None, "none")
+
+    def audio(item):
+        return item.get("acodec") not in (None, "none")
+
+    def quality(item):
+        return (item.get("height") or 0, item.get("tbr") or 0)
+
+    # A genuine muxed MP4/WebM is easiest for Android and keeps an existing
+    # lower-resolution option working without a transcoder.
+    combined = [item for item in candidates
+                if video(item) and audio(item) and item.get("ext") in ("mp4", "webm")]
+    if combined:
+        selected = max(combined, key=lambda x: (x.get("ext") == "mp4", *quality(x)))
+        return ("combined", selected["format_id"], None)
+
+    # No FFmpeg. MediaMuxer can remux AVC/HEVC + AAC into MP4 without transcoding.
+    video_tracks = [item for item in candidates
+                    if video(item) and not audio(item) and item.get("ext") == "mp4"
+                    and str(item.get("vcodec", "")).startswith(("avc1", "hev1", "hvc1"))]
+    audio_tracks = [item for item in candidates
+                    if audio(item) and not video(item) and item.get("ext") == "m4a"
+                    and str(item.get("acodec", "")).startswith("mp4a")]
+    if video_tracks and audio_tracks:
+        selected_video = max(video_tracks, key=lambda x: (
+            str(x.get("vcodec", "")).startswith("avc1"), *quality(x)))
+        selected_audio = max(audio_tracks, key=lambda x: (x.get("abr") or 0, x.get("tbr") or 0))
+        return ("split", selected_video["format_id"], selected_audio["format_id"])
+
+    raise RuntimeError(
+        "No compatible Shorts formats: need combined MP4/WebM or AVC/HEVC MP4 + AAC M4A. "
+        "YouTube format extraction may require an external JS runtime and yt-dlp-ejs."
+    )
+
+
+def download_shorts(url, directory, prefix, listener, report, check_cancelled):
+    """Return a media file path, or JSON with video/audio paths to remux on Android."""
+    import json
+    from yt_dlp import YoutubeDL
+
+    base_options = {
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "retries": 3,
+        "fragment_retries": 3,
+        "socket_timeout": 30,
+        "cachedir": False,
+        # Request all formats for metadata; a format selector demanding combined
+        # streams would fail for typical Shorts.
+        "format": "all",
+    }
+    report(0, "Checking available Shorts formats ...")
+    check_cancelled()
+    with YoutubeDL(base_options) as ydl:
+        details = ydl.extract_info(url, download=False)
+    check_cancelled()
+    mode, video_id, audio_id = choose_shorts_formats(details.get("formats", []))
+
+    def download_one(format_id, label, start, span):
+        last = -1
+        def hook(state):
+            nonlocal last
+            check_cancelled()
+            if state.get("status") == "downloading":
+                received = state.get("downloaded_bytes") or 0
+                total = state.get("total_bytes") or state.get("total_bytes_estimate") or 0
+                pct = min(99, int(100 * received / total)) if total else 0
+                if pct >= last + 2:
+                    last = pct
+                    report(start + pct * span / 100.0, "Downloading Shorts {}: {}%".format(label, pct))
+        options = dict(base_options,
+                       format=str(format_id),
+                       outtmpl=str(directory / (prefix + label + ".%(ext)s")),
+                       progress_hooks=[hook])
+        check_cancelled()
+        with YoutubeDL(options) as ydl:
+            ydl.extract_info(url, download=True)
+        check_cancelled()
+        files = [p for p in directory.glob(prefix + label + ".*")
+                 if p.is_file() and p.suffix.lower() in _VIDEO.union({".m4a"})
+                 and p.stat().st_size > 0]
+        if not files:
+            raise RuntimeError("Missing downloaded Shorts {} track".format(label))
+        return max(files, key=lambda p: p.stat().st_size)
+
+    if mode == "combined":
+        return str(download_one(video_id, "combined", 5, 90))
+    video_file = download_one(video_id, "video", 5, 45)
+    audio_file = download_one(audio_id, "audio", 50, 40)
+    report(92, "Preparing Android audio/video merge ...")
+    return json.dumps({"video": str(video_file), "audio": str(audio_file)})
+
 def download_video(raw_url, output_dir, listener=None):
     from yt_dlp import YoutubeDL
     url, platform = normalize_supported_url(raw_url)
@@ -63,6 +163,7 @@ def download_video(raw_url, output_dir, listener=None):
     prefix = "{}_{}_".format(platform, uuid4().hex)
     last = -1
     selected = None
+    retained = set()
 
     def report(pct, message):
         if listener is not None:
@@ -96,8 +197,18 @@ def download_video(raw_url, output_dir, listener=None):
     }
     try:
         _check_cancelled(listener)
-        report(0, "Connecting to YouTube Shorts ..." if platform == "shorts"
-               else "Connecting to Instagram ...")
+        if platform == "shorts":
+            output = download_shorts(
+                url, directory, prefix, listener, report,
+                lambda: _check_cancelled(listener))
+            if output.startswith("{"):
+                import json
+                separate = json.loads(output)
+                retained.update((Path(separate["video"]), Path(separate["audio"])))
+            else:
+                retained.add(Path(output))
+            return output
+        report(0, "Connecting to Instagram ...")
         with YoutubeDL(options) as ydl:
             _check_cancelled(listener)
             ydl.extract_info(url, download=True)
@@ -107,12 +218,13 @@ def download_video(raw_url, output_dir, listener=None):
         if not videos:
             raise RuntimeError("No combined video/audio format available (FFmpeg is not bundled)")
         selected = max(videos, key=lambda p: p.stat().st_mtime)
+        retained.add(selected)
         return str(selected)
     finally:
         # yt-dlp can leave .part, fragments and metadata after failures/cancellation.
         # Files from other downloads have distinct UUID prefixes and are untouched.
         for path in directory.glob(prefix + "*"):
-            if path.is_file() and path != selected:
+            if path.is_file() and path not in retained:
                 try:
                     path.unlink()
                 except OSError:
