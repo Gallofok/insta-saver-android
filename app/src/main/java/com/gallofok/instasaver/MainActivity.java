@@ -30,6 +30,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Locale;
+import org.json.JSONObject;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
@@ -209,15 +210,29 @@ public class MainActivity extends Activity {
         cancelButton.setEnabled(true);
         worker.execute(() -> {
             File downloadedFile = null;
+            File videoTrack = null;
+            File audioTrack = null;
+            File mergedFile = null;
             try {
                 if (callback.isCancelled()) throw new IOException("Cancelled by user");
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
                 PyObject module = Python.getInstance().getModule("downloader");
                 PyObject value = module.callAttr("download_video", source, cache.getAbsolutePath(), callback);
-                downloadedFile = new File(value.toString());
-                // Cancellation is available during extraction, not while saving to MediaStore.
-                activeCallback = null;
+                String result = value.toString();
+                if (result.startsWith("{")) {
+                    JSONObject parts = new JSONObject(result);
+                    videoTrack = new File(parts.getString("video"));
+                    audioTrack = new File(parts.getString("audio"));
+                    mergedFile = new File(cache, "shorts_merged_" + System.nanoTime() + ".mp4");
+                    runOnUiThread(() -> status("Merging Shorts video and audio ..."));
+                    Mp4TracksMuxer.merge(videoTrack, audioTrack, mergedFile, callback::isCancelled);
+                    downloadedFile = mergedFile;
+                } else {
+                    downloadedFile = new File(result);
+                }
                 if (callback.isCancelled()) throw new IOException("Cancelled by user");
+                // Saving to MediaStore is not cancellable once the copy begins.
+                activeCallback = null;
                 runOnUiThread(() -> {
                     cancelButton.setEnabled(false);
                     status("Saving to Android gallery ...");
@@ -242,8 +257,11 @@ public class MainActivity extends Activity {
                 });
             } finally {
                 activeCallback = null;
-                // A failed gallery write should not leave a complete video in cache.
+                // Clean up both component streams and merged output, including on errors.
                 if (downloadedFile != null && downloadedFile.isFile()) downloadedFile.delete();
+                if (videoTrack != null && videoTrack.isFile()) videoTrack.delete();
+                if (audioTrack != null && audioTrack.isFile()) audioTrack.delete();
+                if (mergedFile != null && mergedFile.isFile()) mergedFile.delete();
             }
         });
     }
