@@ -24,7 +24,9 @@ A debug APK is installable for testing, but is *not* a Play Store release and is
 - Supported platforms: public Instagram Reel/post and **YouTube Shorts only**. YouTube watch, playlists, channels and youtu.be links are not supported.
 - Example Shorts validation/test URL: `https://m.youtube.com/shorts/xtcECX1rnuw` (canonicalized to `https://www.youtube.com/shorts/xtcECX1rnuw`).
 - **YouTube Shorts are experimental and not yet validated on-device**: recent yt-dlp YouTube extraction needs an external JavaScript runtime plus yt-dlp-ejs for full support. Neither is bundled by this APK; without them, some (or all) Shorts formats may be unavailable.
-- In this version, only combined video+audio formats are selected. If a Short has only separate streams, the download cannot complete without FFmpeg.
+- Shorts first use an available combined MP4/WebM video with audio. If none exists, the app selects separate H.264/H.265 MP4 video and AAC/M4A audio streams and uses Android's built-in MediaMuxer to combine them **without FFmpeg**. Other codec combinations may still fail.
+- The UI now reports when only incompatible formats are available. A missing JavaScript runtime can prevent yt-dlp from exposing playable formats, so this change does not guarantee successful downloading of every Short.
+- Real device test requested: `https://m.youtube.com/shorts/xtcECX1rnuw`; verify playable video *with audio* in the gallery.
 - Automated tests validate the URL and use a fake yt-dlp extractor; they do not download the sample video or prove real Shorts extraction works.
 - Cancellation can take until the next download progress callback or extraction check; it is not immediate during network setup.
 - APK builds and offline Python tests also run for pull requests targeting main.
