@@ -43,6 +43,8 @@ public class MainActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private EditText urlInput;
     private Button downloadButton;
+    private Button cancelButton;
+    private volatile ProgressCallback activeCallback;
     private ProgressBar progressBar;
     private TextView statusText;
     private TextView logText;
@@ -104,6 +106,18 @@ public class MainActivity extends Activity {
         paste.setText("Paste");
         controls.addView(paste);
         paste.setOnClickListener(v -> pasteClipboard());
+
+        cancelButton = new Button(this);
+        cancelButton.setText("Cancel download");
+        cancelButton.setEnabled(false);
+        content.addView(cancelButton);
+        cancelButton.setOnClickListener(v -> {
+            ProgressCallback callback = activeCallback;
+            if (callback == null) return;
+            callback.cancel();
+            cancelButton.setEnabled(false);
+            status("Cancelling download ...");
+        });
 
         progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progressBar.setMax(100);
@@ -174,8 +188,8 @@ public class MainActivity extends Activity {
     private void download() {
         if (downloading) return;
         final String source = extractUrl(urlInput.getText().toString());
-        if (!source.startsWith("https://") && !source.startsWith("http://")) {
-            status("Enter an Instagram Reel URL");
+        if (!INSTAGRAM_URL.matcher(source).matches()) {
+            status("Enter a valid Instagram Reel/post URL");
             return;
         }
         urlInput.setText(source);
@@ -189,15 +203,25 @@ public class MainActivity extends Activity {
             fail("Cannot create downloads directory");
             return;
         }
+        final ProgressCallback callback = new ProgressCallback();
+        activeCallback = callback;
+        cancelButton.setEnabled(true);
         worker.execute(() -> {
+            File downloadedFile = null;
             try {
+                if (callback.isCancelled()) throw new IOException("Cancelled by user");
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
                 PyObject module = Python.getInstance().getModule("downloader");
-                PyObject value = module.callAttr("download_reel", source, cache.getAbsolutePath(), new ProgressCallback());
-                File file = new File(value.toString());
-                runOnUiThread(() -> status("Saving to Android gallery ..."));
-                Uri saved = copyToGallery(file);
-                if (!file.delete()) { /* Android will eventually reclaim cache. */ }
+                PyObject value = module.callAttr("download_reel", source, cache.getAbsolutePath(), callback);
+                downloadedFile = new File(value.toString());
+                // Cancellation is available during extraction, not while saving to MediaStore.
+                activeCallback = null;
+                if (callback.isCancelled()) throw new IOException("Cancelled by user");
+                runOnUiThread(() -> {
+                    cancelButton.setEnabled(false);
+                    status("Saving to Android gallery ...");
+                });
+                Uri saved = copyToGallery(downloadedFile);
                 runOnUiThread(() -> {
                     progressBar.setProgress(100);
                     status("Saved to Movies/InstaSaver");
@@ -206,15 +230,35 @@ public class MainActivity extends Activity {
                     complete();
                 });
             } catch (Exception e) {
-                runOnUiThread(() -> fail(e.toString()));
+                runOnUiThread(() -> {
+                    if (callback.isCancelled()) {
+                        status("Download cancelled");
+                        log("Cancelled by user");
+                        complete();
+                    } else {
+                        fail(e.toString());
+                    }
+                });
+            } finally {
+                activeCallback = null;
+                // A failed gallery write should not leave a complete video in cache.
+                if (downloadedFile != null && downloadedFile.isFile()) downloadedFile.delete();
             }
         });
     }
 
     /** Chaquopy exposes this Java object as an ordinary Python callback. */
     public final class ProgressCallback {
+        private volatile boolean cancelled = false;
+
+        public boolean isCancelled() { return cancelled; }
+
+        void cancel() { cancelled = true; }
+
         public void report(double percent, String message) {
+            if (cancelled) return;
             runOnUiThread(() -> {
+                if (cancelled) return;
                 progressBar.setProgress((int) Math.max(0, Math.min(99, percent)));
                 status(message);
             });
@@ -264,6 +308,8 @@ public class MainActivity extends Activity {
 
     private void complete() {
         downloading = false;
+        activeCallback = null;
+        cancelButton.setEnabled(false);
         downloadButton.setEnabled(true);
     }
 
