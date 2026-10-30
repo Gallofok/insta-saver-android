@@ -1,10 +1,13 @@
-"""Download publicly available Instagram video with local yt-dlp extraction."""
+"""Download public Instagram posts and YouTube Shorts with local yt-dlp."""
+import re
 from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-_HOSTS = {"instagram.com", "www.instagram.com", "m.instagram.com"}
+_INSTAGRAM_HOSTS = {"instagram.com", "www.instagram.com", "m.instagram.com"}
+_YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com"}
 _TYPES = {"reel", "reels", "p", "tv"}
+_SHORTS_PATH = re.compile(r"^/shorts/([A-Za-z0-9_-]{11})/?$")
 _VIDEO = {".mp4", ".webm", ".mov", ".mkv"}
 
 class DownloadCancelled(RuntimeError):
@@ -19,7 +22,7 @@ def _check_cancelled(listener):
 
 def normalize_instagram_url(value):
     parts = urlsplit((value or "").strip())
-    if parts.scheme not in ("https", "http") or (parts.hostname or "").lower() not in _HOSTS:
+    if parts.scheme not in ("https", "http") or (parts.hostname or "").lower() not in _INSTAGRAM_HOSTS:
         raise ValueError("Only public Instagram post/reel links are supported")
     segments = [s for s in parts.path.split("/") if s]
     if len(segments) < 2 or segments[0].lower() not in _TYPES:
@@ -30,12 +33,34 @@ def normalize_instagram_url(value):
     return "https://www.instagram.com/{}/{}/".format(segments[0].lower(), shortcode)
 
 
-def download_reel(raw_url, output_dir, listener=None):
+def normalize_youtube_shorts_url(value):
+    """Only accept YouTube /shorts/ URLs, never watch, playlist or channel URLs."""
+    parts = urlsplit((value or "").strip())
+    if (parts.scheme not in ("https", "http")
+            or (parts.hostname or "").lower() not in _YOUTUBE_HOSTS
+            or parts.username is not None or parts.password is not None):
+        raise ValueError("Only YouTube Shorts links are supported")
+    match = _SHORTS_PATH.fullmatch(parts.path)
+    if not match:
+        raise ValueError("Expected a YouTube /shorts/VIDEO_ID URL")
+    return "https://www.youtube.com/shorts/{}".format(match.group(1))
+
+
+def normalize_supported_url(value):
+    """Return a canonical URL and its supported source name."""
+    parts = urlsplit((value or "").strip())
+    host = (parts.hostname or "").lower()
+    if host in _YOUTUBE_HOSTS:
+        return normalize_youtube_shorts_url(value), "shorts"
+    return normalize_instagram_url(value), "instagram"
+
+
+def download_video(raw_url, output_dir, listener=None):
     from yt_dlp import YoutubeDL
-    url = normalize_instagram_url(raw_url)
+    url, platform = normalize_supported_url(raw_url)
     directory = Path(output_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    prefix = "insta_{}_".format(uuid4().hex)
+    prefix = "{}_{}_".format(platform, uuid4().hex)
     last = -1
     selected = None
 
@@ -58,7 +83,8 @@ def download_reel(raw_url, output_dir, listener=None):
 
     options = {
         "outtmpl": str(directory / (prefix + "%(id)s.%(ext)s")),
-        "format": "best[ext=mp4][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]/best",
+        # No FFmpeg is bundled: only select a single file containing BOTH video and audio.
+        "format": "best[ext=mp4][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]",
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
@@ -70,7 +96,8 @@ def download_reel(raw_url, output_dir, listener=None):
     }
     try:
         _check_cancelled(listener)
-        report(0, "Connecting to Instagram ...")
+        report(0, "Connecting to YouTube Shorts ..." if platform == "shorts"
+               else "Connecting to Instagram ...")
         with YoutubeDL(options) as ydl:
             _check_cancelled(listener)
             ydl.extract_info(url, download=True)
@@ -78,7 +105,7 @@ def download_reel(raw_url, output_dir, listener=None):
         videos = [p for p in directory.glob(prefix + "*")
                   if p.is_file() and p.suffix.lower() in _VIDEO and p.stat().st_size > 0]
         if not videos:
-            raise RuntimeError("No compatible video file found (FFmpeg merging is not supported yet)")
+            raise RuntimeError("No combined video/audio format available (FFmpeg is not bundled)")
         selected = max(videos, key=lambda p: p.stat().st_mtime)
         return str(selected)
     finally:
@@ -90,3 +117,8 @@ def download_reel(raw_url, output_dir, listener=None):
                     path.unlink()
                 except OSError:
                     pass
+
+
+def download_reel(raw_url, output_dir, listener=None):
+    """Backward-compatible alias for existing callers and offline tests."""
+    return download_video(raw_url, output_dir, listener)
