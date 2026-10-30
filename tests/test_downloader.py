@@ -2,10 +2,11 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app/src/main/python"))
-from downloader import normalize_instagram_url, download_reel
+from downloader import normalize_instagram_url, download_reel, DownloadCancelled
 
 
 class DownloaderTests(unittest.TestCase):
@@ -56,6 +57,75 @@ class DownloaderTests(unittest.TestCase):
                 del sys.modules["yt_dlp"]
             else:
                 sys.modules["yt_dlp"] = old
+
+    def test_failed_download_removes_partial_files(self):
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def extract_info(self, url, download):
+                filename = self.opts["outtmpl"].replace("%(id)s", "123").replace("%(ext)s", "mp4")
+                Path(filename + ".part").write_bytes(b"incomplete")
+                raise OSError("simulated network failure")
+
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as d:
+                with self.assertRaises(OSError):
+                    download_reel("https://www.instagram.com/reel/ABC/", d)
+                self.assertEqual(list(Path(d).iterdir()), [])
+
+    def test_cancelled_download_removes_partial_files(self):
+        class Listener:
+            cancelled = False
+            def report(self, percent, message):
+                pass
+            def isCancelled(self):
+                return self.cancelled
+        listener = Listener()
+
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def extract_info(self, url, download):
+                filename = self.opts["outtmpl"].replace("%(id)s", "123").replace("%(ext)s", "mp4")
+                Path(filename + ".part").write_bytes(b"incomplete")
+                listener.cancelled = True
+                self.opts["progress_hooks"][0]({
+                    "status": "downloading", "downloaded_bytes": 1, "total_bytes": 2
+                })
+
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as d:
+                with self.assertRaises(DownloadCancelled):
+                    download_reel("https://www.instagram.com/reel/ABC/", d, listener)
+                self.assertEqual(list(Path(d).iterdir()), [])
+
+    def test_success_removes_sidecar_files(self):
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def extract_info(self, url, download):
+                filename = self.opts["outtmpl"].replace("%(id)s", "123").replace("%(ext)s", "mp4")
+                Path(filename).write_bytes(b"video")
+                Path(filename + ".part").write_bytes(b"partial")
+
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as d:
+                result = Path(download_reel("https://www.instagram.com/reel/ABC/", d))
+                self.assertTrue(result.is_file())
+                self.assertEqual(list(Path(d).iterdir()), [result])
+
 
 if __name__ == "__main__":
     unittest.main()
