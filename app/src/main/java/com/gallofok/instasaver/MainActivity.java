@@ -37,8 +37,9 @@ import java.util.regex.Pattern;
 
 /** Small standalone Android UI; Python yt-dlp runs only on a worker thread. */
 public class MainActivity extends Activity {
-    private static final Pattern INSTAGRAM_URL = Pattern.compile(
-        "https?://(?:www\\.|m\\.)?instagram\\.com/(?:reel|reels|p|tv)/[A-Za-z0-9_-]+[^\\s]*",
+    private static final Pattern SUPPORTED_URL = Pattern.compile(
+        "https?://(?:www\\.|m\\.)?instagram\\.com/(?:reel|reels|p|tv)/[A-Za-z0-9_-]+[^\\s]*"
+        + "|https?://(?:www\\.|m\\.)?youtube\\.com/shorts/[A-Za-z0-9_-]{11}(?:[/?#][^\\s]*)?",
         Pattern.CASE_INSENSITIVE);
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private EditText urlInput;
@@ -82,13 +83,13 @@ public class MainActivity extends Activity {
         content.addView(title);
 
         TextView intro = new TextView(this);
-        intro.setText("Share an Instagram Reel to this app or paste its link. Downloads run on-device using yt-dlp.");
+        intro.setText("Share an Instagram Reel or YouTube Short to this app, or paste its link. Downloads run on-device using yt-dlp.");
         intro.setTextSize(15);
         intro.setPadding(0, dp(10), 0, dp(18));
         content.addView(intro);
 
         urlInput = new EditText(this);
-        urlInput.setHint("https://www.instagram.com/reel/...");
+        urlInput.setHint("https://m.youtube.com/shorts/...");
         urlInput.setTextSize(14);
         urlInput.setSingleLine(false);
         urlInput.setMinLines(2);
@@ -149,7 +150,7 @@ public class MainActivity extends Activity {
         logText.setTextIsSelectable(true);
         logText.setPadding(0, dp(8), 0, dp(8));
         content.addView(logText);
-        log("Initialized. Public Instagram posts only. Keep app open while downloading.");
+        log("Initialized. Public Instagram posts and YouTube Shorts only. Keep app open while downloading.");
     }
 
     private void pasteClipboard() {
@@ -161,7 +162,7 @@ public class MainActivity extends Activity {
     }
 
     private static String extractUrl(String input) {
-        Matcher matcher = INSTAGRAM_URL.matcher(input);
+        Matcher matcher = SUPPORTED_URL.matcher(input);
         return matcher.find() ? matcher.group().replaceAll("[),.\\]]+$", "") : input.trim();
     }
 
@@ -188,8 +189,8 @@ public class MainActivity extends Activity {
     private void download() {
         if (downloading) return;
         final String source = extractUrl(urlInput.getText().toString());
-        if (!INSTAGRAM_URL.matcher(source).matches()) {
-            status("Enter a valid Instagram Reel/post URL");
+        if (!SUPPORTED_URL.matcher(source).matches()) {
+            status("Enter an Instagram Reel or YouTube Shorts URL");
             return;
         }
         urlInput.setText(source);
@@ -212,7 +213,7 @@ public class MainActivity extends Activity {
                 if (callback.isCancelled()) throw new IOException("Cancelled by user");
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
                 PyObject module = Python.getInstance().getModule("downloader");
-                PyObject value = module.callAttr("download_reel", source, cache.getAbsolutePath(), callback);
+                PyObject value = module.callAttr("download_video", source, cache.getAbsolutePath(), callback);
                 downloadedFile = new File(value.toString());
                 // Cancellation is available during extraction, not while saving to MediaStore.
                 activeCallback = null;
