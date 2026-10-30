@@ -9,6 +9,7 @@ The native Java interface invokes embedded Python **yt-dlp** through Chaquopy.
 - Or paste a public Reel/post URL in the app and press **Download video**.
 - Saves to **Movies/InstaSaver** using Android MediaStore without broad storage permissions.
 - Visible progress, error messages and a copyable debug log.
+- **Cancel download** while yt-dlp is running. Partial downloads are cleaned up on cancellation or failure.
 - The download runs in the foreground. Keep the app open.
 
 ## GitHub Actions: build an APK without a computer
@@ -21,6 +22,8 @@ A debug APK is installable for testing, but is *not* a Play Store release and is
 
 ## Scope and limits
 - Only publicly accessible Instagram Reel/post URLs are supported.
+- Cancellation can take until the next download progress callback or extraction check; it is not immediate during network setup.
+- APK builds and offline Python tests also run for pull requests targeting main.
 - Instagram may require login, block requests or change its extraction protocol.
 - yt-dlp uses a single combined audio/video format where available. **No FFmpeg is bundled**; formats which require merging may fail.
 - No background service, cookie import, account handling, or analytics.
