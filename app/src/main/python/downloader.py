@@ -7,6 +7,15 @@ _HOSTS = {"instagram.com", "www.instagram.com", "m.instagram.com"}
 _TYPES = {"reel", "reels", "p", "tv"}
 _VIDEO = {".mp4", ".webm", ".mov", ".mkv"}
 
+class DownloadCancelled(RuntimeError):
+    """Raised when the Android UI requests cancellation."""
+
+
+def _check_cancelled(listener):
+    check = getattr(listener, "isCancelled", None)
+    if callable(check) and check():
+        raise DownloadCancelled("Download cancelled by user")
+
 
 def normalize_instagram_url(value):
     parts = urlsplit((value or "").strip())
@@ -28,6 +37,7 @@ def download_reel(raw_url, output_dir, listener=None):
     directory.mkdir(parents=True, exist_ok=True)
     prefix = "insta_{}_".format(uuid4().hex)
     last = -1
+    selected = None
 
     def report(pct, message):
         if listener is not None:
@@ -35,6 +45,7 @@ def download_reel(raw_url, output_dir, listener=None):
 
     def hook(state):
         nonlocal last
+        _check_cancelled(listener)
         if state.get("status") == "downloading":
             received = state.get("downloaded_bytes") or 0
             total = state.get("total_bytes") or state.get("total_bytes_estimate") or 0
@@ -57,11 +68,25 @@ def download_reel(raw_url, output_dir, listener=None):
         "socket_timeout": 30,
         "cachedir": False,
     }
-    report(0, "Connecting to Instagram ...")
-    with YoutubeDL(options) as ydl:
-        ydl.extract_info(url, download=True)
-    videos = [p for p in directory.glob(prefix + "*")
-              if p.is_file() and p.suffix.lower() in _VIDEO and p.stat().st_size > 0]
-    if not videos:
-        raise RuntimeError("No compatible video file found (FFmpeg merging is not supported yet)")
-    return str(max(videos, key=lambda p: p.stat().st_mtime))
+    try:
+        _check_cancelled(listener)
+        report(0, "Connecting to Instagram ...")
+        with YoutubeDL(options) as ydl:
+            _check_cancelled(listener)
+            ydl.extract_info(url, download=True)
+        _check_cancelled(listener)
+        videos = [p for p in directory.glob(prefix + "*")
+                  if p.is_file() and p.suffix.lower() in _VIDEO and p.stat().st_size > 0]
+        if not videos:
+            raise RuntimeError("No compatible video file found (FFmpeg merging is not supported yet)")
+        selected = max(videos, key=lambda p: p.stat().st_mtime)
+        return str(selected)
+    finally:
+        # yt-dlp can leave .part, fragments and metadata after failures/cancellation.
+        # Files from other downloads have distinct UUID prefixes and are untouched.
+        for path in directory.glob(prefix + "*"):
+            if path.is_file() and path != selected:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
