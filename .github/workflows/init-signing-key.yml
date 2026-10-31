@@ -37,13 +37,18 @@ jobs:
           mkdir -p .github/signing
           umask 077
           keystore="$RUNNER_TEMP/insta-saver-signing.p12"
+          # keytool/PKCS12 may reject non-ASCII passphrases. Derive a stable
+          # 64-character ASCII hex password from the UTF-8 secret instead.
+          # The *original* secret still encrypts the stored .p12 with OpenSSL.
+          keystore_password="$(printf '%s' "$INSTA_SAVER_SIGNING_PASSPHRASE" | sha256sum | cut -d' ' -f1)"
+          echo "::add-mask::$keystore_password"
           keytool -genkeypair -noprompt \
             -alias insta-saver-stable -keyalg RSA -keysize 3072 \
             -sigalg SHA256withRSA -validity 12500 \
             -dname "CN=Insta Saver,O=Personal Development,C=DE" \
             -storetype PKCS12 -keystore "$keystore" \
-            -storepass "$INSTA_SAVER_SIGNING_PASSPHRASE" \
-            -keypass "$INSTA_SAVER_SIGNING_PASSPHRASE"
+            -storepass "$keystore_password" \
+            -keypass "$keystore_password"
           openssl enc -aes-256-cbc -pbkdf2 -iter 300000 -salt \
             -in "$keystore" -out "$dest" -pass env:INSTA_SAVER_SIGNING_PASSPHRASE
           shred -u "$keystore" || rm -f "$keystore"
