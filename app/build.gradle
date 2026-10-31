@@ -16,13 +16,13 @@ android {
     // The keystore is decrypted only on trusted, manually dispatched CI runs.
     // PR builds use Gradle's ephemeral debug certificate and are not distributed.
     if (System.getenv('INSTA_SAVER_KEYSTORE_FILE')
-            && System.getenv('INSTA_SAVER_SIGNING_PASSPHRASE')) {
+            && System.getenv('INSTA_SAVER_KEYSTORE_PASSWORD')) {
         signingConfigs {
             permanent {
                 storeFile file(System.getenv('INSTA_SAVER_KEYSTORE_FILE'))
-                storePassword System.getenv('INSTA_SAVER_SIGNING_PASSPHRASE')
+                storePassword System.getenv('INSTA_SAVER_KEYSTORE_PASSWORD')
                 keyAlias 'insta-saver-stable'
-                keyPassword System.getenv('INSTA_SAVER_SIGNING_PASSPHRASE')
+                keyPassword System.getenv('INSTA_SAVER_KEYSTORE_PASSWORD')
                 storeType 'PKCS12'
             }
         }
