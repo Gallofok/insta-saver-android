@@ -53,10 +53,13 @@ jobs:
             -out "$RUNNER_TEMP/insta-saver-signing.p12" \
             -pass env:INSTA_SAVER_SIGNING_PASSPHRASE
           echo "INSTA_SAVER_KEYSTORE_FILE=$RUNNER_TEMP/insta-saver-signing.p12" >> "$GITHUB_ENV"
+          # Convert the original UTF-8 secret into the same stable ASCII
+          # password used by the one-time keytool bootstrap.
+          keystore_password="$(printf '%s' "$INSTA_SAVER_SIGNING_PASSPHRASE" | sha256sum | cut -d' ' -f1)"
+          echo "::add-mask::$keystore_password"
+          echo "INSTA_SAVER_KEYSTORE_PASSWORD=$keystore_password" >> "$GITHUB_ENV"
       - name: Build debug APK
-        env:
-          # Fork/PR builds never receive signing secrets.
-          INSTA_SAVER_SIGNING_PASSPHRASE: ${{ github.event_name == 'workflow_dispatch' && secrets.INSTA_SAVER_SIGNING_PASSPHRASE || '' }}
+        # CI's PR/push builds have neither keystore nor its derived password.
         run: gradle --no-daemon --stacktrace :app:assembleDebug
       - name: Verify stable APK signature
         if: github.event_name == 'workflow_dispatch'
