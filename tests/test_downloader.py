@@ -168,5 +168,52 @@ class DownloaderTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "Instagram restricted this Reel"):
                     download_reel("https://www.instagram.com/reel/ABC/", d)
 
+
+    def test_instagram_format_selector_accepts_silent_video(self):
+        # A silent Instagram Reel may have no combined video+audio stream.
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def extract_info(self, url, download):
+                self_format = self.opts["format"]
+                # Strict 'best' is unavailable; video-only fallback is allowed.
+                self.assert_true = "bv*" in self_format
+                if not self.assert_true:
+                    raise RuntimeError("Requested format is not available")
+                out = self.opts["outtmpl"].replace("%(id)s", "ABC").replace("%(ext)s", "mp4")
+                Path(out).write_bytes(b"silent-video")
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as directory:
+                video = download_reel("https://www.instagram.com/reel/ABC/", directory)
+                self.assertTrue(Path(video).is_file())
+
+    def test_instagram_missing_formats_diagnostics_no_cookies(self):
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def extract_info(self, url, download):
+                if self.opts["format"] == "all":
+                    return {"formats": [
+                        {"format_id": "audio-1", "ext": "m4a", "vcodec": "none", "acodec": "aac"}
+                    ]}
+                raise RuntimeError("Requested format is not available")
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as directory:
+                from downloader import download_video
+                cookie_file = Path(directory) / "cookies.txt"
+                cookie_file.write_text("# Netscape HTTP Cookie File\\nsecret-test-data")
+                with self.assertRaisesRegex(RuntimeError, "0 possible video formats") as cm:
+                    download_video("https://www.instagram.com/reel/ABC/", directory, None, str(cookie_file))
+                self.assertNotIn("secret-test-data", str(cm.exception))
+                self.assertIn("1 audio-only formats", str(cm.exception))
+
 if __name__ == "__main__":
     unittest.main()
