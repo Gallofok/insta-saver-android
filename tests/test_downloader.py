@@ -127,5 +127,46 @@ class DownloaderTests(unittest.TestCase):
                 self.assertEqual(list(Path(d).iterdir()), [result])
 
 
+
+    def test_instagram_cookiefile_is_opt_in(self):
+        seen = []
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+                seen.append(opts.copy())
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def extract_info(self, url, download):
+                Path(self.opts["outtmpl"].replace("%(id)s", "ABC").replace("%(ext)s", "mp4")).write_bytes(b"video")
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as d:
+                cookie_file = Path(d) / "instagram_cookies.txt"
+                cookie_file.write_text("# Netscape HTTP Cookie File\\n")
+                download_reel("https://www.instagram.com/reel/ABC/", d)
+                self.assertNotIn("cookiefile", seen[-1])
+                from downloader import download_video
+                download_video("https://www.instagram.com/reel/ABC/", d, None, str(cookie_file))
+                self.assertEqual(seen[-1]["cookiefile"], str(cookie_file))
+
+    def test_instagram_restriction_has_clear_message(self):
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def extract_info(self, url, download):
+                raise RuntimeError(
+                    "ERROR: [Instagram] ABC: This content isn't available to everyone: "
+                    "It can't be seen by certain audiences."
+                )
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as d:
+                with self.assertRaisesRegex(RuntimeError, "Instagram restricted this Reel"):
+                    download_reel("https://www.instagram.com/reel/ABC/", d)
+
 if __name__ == "__main__":
     unittest.main()
