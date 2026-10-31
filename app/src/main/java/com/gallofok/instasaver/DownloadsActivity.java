@@ -196,8 +196,11 @@ public final class DownloadsActivity extends Activity {
                     MediaStore.Video.Media.DURATION,
                     MediaStore.Video.Media.DATE_ADDED
                 };
-                String selection = MediaStore.Video.Media.RELATIVE_PATH + " LIKE ?";
-                String[] args = { "Movies/InstaSaver%" };
+                // Match this folder (and its subfolders), not similarly named
+                // folders such as Movies/InstaSaverBackup.
+                String selection = "(" + MediaStore.Video.Media.RELATIVE_PATH
+                    + " = ? OR " + MediaStore.Video.Media.RELATIVE_PATH + " LIKE ?)";
+                String[] args = { "Movies/InstaSaver", DOWNLOADS_PATH + "%" };
                 try (Cursor cursor = getContentResolver().query(
                         MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
                         projection, selection, args,
