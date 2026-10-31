@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, 'feat/cancel-and-cleanup-20261030']
+    branches: [main, 'feat/cancel-and-cleanup-20261030', 'fix/instagram-cookie-import-20261031']
   workflow_dispatch:
 permissions:
   contents: read
