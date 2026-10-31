@@ -4,6 +4,20 @@ Experimental **on-device** Instagram Reel and **YouTube Shorts** downloader for 
 The native Java interface invokes embedded Python **yt-dlp** through Chaquopy.
 **No Media Saver server** is needed.
 
+## Blue UI test release (v0.3.7)
+
+This branch changes **presentation only** and preserves the existing downloader behavior, supported URL rules, Instagram Cookie file handling, offline media gallery, Android video player, permissions, and permanent signing setup.
+
+- Blue/cyan header with Insta Saver branding.
+- Rounded URL card with Paste and Download buttons, plus platform labels.
+- Quick tiles for My downloads, Import Instagram cookies, and Copy debug log.
+- Status/progress/cancel card with the same progress callbacks and cancellation logic.
+- A real Recent downloads list sourced from the existing `Movies/InstaSaver` MediaStore folder (no sample videos are manufactured); tap a row to play with the existing player.
+- Bottom Home / Downloads / Settings navigation; Settings preserves Cookie removal, debug log viewing, and video library links.
+- Downloads gallery uses matching blue colors but retains its original query/permission logic.
+
+**Update without uninstalling:** manually run the **Build debug APK** workflow on the `feat/blue-ui-v037-20261101` branch and use its **insta-saver-stable-signed-apk** artifact, not an ephemeral PR debug APK. Requires the permanent encrypted signing key already initialized in the repo; v0.3.7 uses `versionCode 10` following v0.3.6's code 9.
+
 ## Features
 - Instagram Reel or YouTube Shorts → **Share** → **Insta Saver** receives a link and starts downloading.
 - Or paste a public Reel/post/Shorts URL in the app and press **Download video**.
