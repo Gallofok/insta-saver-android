@@ -10,7 +10,10 @@ The native Java interface invokes embedded Python **yt-dlp** through Chaquopy.
 - Saves to **Movies/InstaSaver** using Android MediaStore without broad storage permissions.
 - **My downloaded videos** opens an in-app, two-column gallery of videos saved in `Movies/InstaSaver`, with thumbnails, duration, saved date, a refresh button, and tap-to-play using an in-app Android player.
 - Gallery playback is offline and does **not** require an Instagram/YouTube connection.
-- The gallery intentionally lists app-owned MediaStore videos without asking for broad media access permissions; after uninstall/reinstall, Android may treat older saved videos as media owned by another app installation and not expose them without additional permission. Updating the APK in place preserves app ownership and imported cookies.
+- Gallery v0.3.5: If old files exist in `Movies/InstaSaver` but the gallery is blank, tap **Allow access to older downloads**, then choose **Allow all videos** in Android's permission dialog. On Android 14+, **Select videos** grants partial access; the app then sees only the selected items and already owned media. The gallery still filters to the `Movies/InstaSaver` folder even with full permission.
+- No permission is requested when opening Insta Saver or downloading. The permission request happens only when the user taps the gallery's access button.
+- This is important after uninstall/reinstall: Android can remove app ownership of previously created media, even when the files remain in the folder. Updating the APK in place (when possible) preserves app ownership and imported Instagram cookies.
+- If full access is granted and files still do not appear, confirm their physical folder and that Android MediaStore indexes them as videos.
 - Up to 80 newest videos are displayed, newest first; existing downloads are not recopied or duplicated.
 - Visible progress, error messages and a copyable debug log.
 - **Cancel download** while yt-dlp is running. Partial downloads are cleaned up on cancellation or failure.
