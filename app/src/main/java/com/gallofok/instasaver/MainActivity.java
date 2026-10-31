@@ -27,6 +27,10 @@ import com.chaquo.python.android.AndroidPlatform;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Locale;
@@ -38,6 +42,7 @@ import java.util.regex.Pattern;
 
 /** Small standalone Android UI; Python yt-dlp runs only on a worker thread. */
 public class MainActivity extends Activity {
+    private static final int PICK_INSTAGRAM_COOKIES = 731;
     private static final Pattern SUPPORTED_URL = Pattern.compile(
         "https?://(?:www\\.|m\\.)?instagram\\.com/(?:reel|reels|p|tv)/[A-Za-z0-9_-]+[^\\s]*"
         + "|https?://(?:www\\.|m\\.)?youtube\\.com/shorts/[A-Za-z0-9_-]{11}(?:[/?#][^\\s]*)?",
@@ -109,6 +114,25 @@ public class MainActivity extends Activity {
         controls.addView(paste);
         paste.setOnClickListener(v -> pasteClipboard());
 
+        Button importCookies = new Button(this);
+        importCookies.setText("Import Instagram cookies.txt (optional)");
+        content.addView(importCookies);
+        importCookies.setOnClickListener(v -> {
+            Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            pick.addCategory(Intent.CATEGORY_OPENABLE);
+            pick.setType("*/*");
+            startActivityForResult(pick, PICK_INSTAGRAM_COOKIES);
+        });
+        Button clearCookies = new Button(this);
+        clearCookies.setText("Remove Instagram login session");
+        content.addView(clearCookies);
+        clearCookies.setOnClickListener(v -> {
+            File cookies = instagramCookiesFile();
+            boolean removed = !cookies.exists() || cookies.delete();
+            status(removed ? "Imported Instagram session removed" : "Could not remove Instagram session");
+            log(removed ? "Instagram cookies removed locally" : "Cannot delete imported Instagram cookies");
+        });
+
         cancelButton = new Button(this);
         cancelButton.setText("Cancel download");
         cancelButton.setEnabled(false);
@@ -152,6 +176,63 @@ public class MainActivity extends Activity {
         logText.setPadding(0, dp(8), 0, dp(8));
         content.addView(logText);
         log("Initialized. Public Instagram posts and YouTube Shorts only. Keep app open while downloading.");
+    }
+
+    private File instagramCookiesFile() {
+        // Internal app-only storage, never shared with or logged to GitHub.
+        return new File(getFilesDir(), "instagram-cookies.txt");
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == PICK_INSTAGRAM_COOKIES && resultCode == RESULT_OK
+                && data != null && data.getData() != null) {
+            importInstagramCookies(data.getData());
+        }
+    }
+
+    private void importInstagramCookies(Uri source) {
+        try {
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            try (InputStream stream = getContentResolver().openInputStream(source)) {
+                if (stream == null) throw new IOException("Cannot read selected file");
+                byte[] chunk = new byte[8192];
+                int read;
+                while ((read = stream.read(chunk)) != -1) {
+                    if (buffer.size() + read > 262144) throw new IOException("Cookie file is too large");
+                    buffer.write(chunk, 0, read);
+                }
+            }
+
+            String raw = new String(buffer.toByteArray(), StandardCharsets.UTF_8)
+                    .replace("\r\n", "\n");
+            if (!raw.startsWith("# Netscape HTTP Cookie File")
+                    && !raw.startsWith("# HTTP Cookie File")) {
+                throw new IOException("Select a Netscape-format cookies.txt file");
+            }
+            StringBuilder selected = new StringBuilder("# Netscape HTTP Cookie File\n");
+            boolean hasSession = false;
+            for (String line : raw.split("\n")) {
+                if (line.isEmpty() || (line.startsWith("#") && !line.startsWith("#HttpOnly_"))) continue;
+                String[] fields = line.split("\t", -1);
+                if (fields.length != 7) continue;
+                String domain = fields[0].replace("#HttpOnly_", "").toLowerCase(Locale.ROOT);
+                if (!domain.equals("instagram.com") && !domain.endsWith(".instagram.com")) continue;
+                selected.append(line).append('\n');
+                if (fields[5].equals("sessionid") && !fields[6].isEmpty()) hasSession = true;
+            }
+            if (!hasSession) throw new IOException("No Instagram sessionid cookie found; export from a logged-in browser");
+            try (FileOutputStream output = new FileOutputStream(instagramCookiesFile())) {
+                output.write(selected.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            status("Instagram login session imported");
+            log("Imported Instagram cookies into private app storage (values hidden)");
+            Toast.makeText(this, "Instagram session imported", Toast.LENGTH_SHORT).show();
+        } catch (Exception problem) {
+            status("Instagram cookie import failed");
+            // Do not log raw cookies or arbitrary document contents.
+            log("Cookie import error: " + problem.getMessage());
+        }
     }
 
     private void pasteClipboard() {
@@ -217,7 +298,10 @@ public class MainActivity extends Activity {
                 if (callback.isCancelled()) throw new IOException("Cancelled by user");
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
                 PyObject module = Python.getInstance().getModule("downloader");
-                PyObject value = module.callAttr("download_video", source, cache.getAbsolutePath(), callback);
+                String cookiePath = source.toLowerCase(Locale.ROOT).contains("instagram.com/")
+                        && instagramCookiesFile().isFile()
+                        ? instagramCookiesFile().getAbsolutePath() : null;
+                PyObject value = module.callAttr("download_video", source, cache.getAbsolutePath(), callback, cookiePath);
                 String result = value.toString();
                 if (result.startsWith("{")) {
                     JSONObject parts = new JSONObject(result);
