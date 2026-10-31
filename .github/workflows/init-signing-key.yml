@@ -1,0 +1,55 @@
+name: Initialize permanent APK signing key
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: insta-saver-signing-bootstrap
+  cancel-in-progress: false
+jobs:
+  generate-signing-key:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      INSTA_SAVER_SIGNING_PASSPHRASE: ${{ secrets.INSTA_SAVER_SIGNING_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Create one permanent signing identity (only once)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${INSTA_SAVER_SIGNING_PASSPHRASE:-}" || ${#INSTA_SAVER_SIGNING_PASSPHRASE} -lt 24 ]]; then
+            echo "::error::Set Actions secret INSTA_SAVER_SIGNING_PASSPHRASE to a unique random value of 24+ characters."
+            exit 1
+          fi
+          dest=".github/signing/insta-saver-signing.p12.enc"
+          if [[ -e "$dest" ]]; then
+            echo "::error::Permanent signing key already exists. Do NOT regenerate it: doing so breaks APK updates."
+            exit 1
+          fi
+          mkdir -p .github/signing
+          umask 077
+          keystore="$RUNNER_TEMP/insta-saver-signing.p12"
+          keytool -genkeypair -noprompt \
+            -alias insta-saver-stable -keyalg RSA -keysize 3072 \
+            -sigalg SHA256withRSA -validity 12500 \
+            -dname "CN=Insta Saver,O=Personal Development,C=DE" \
+            -storetype PKCS12 -keystore "$keystore" \
+            -storepass "$INSTA_SAVER_SIGNING_PASSPHRASE" \
+            -keypass "$INSTA_SAVER_SIGNING_PASSPHRASE"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 300000 -salt \
+            -in "$keystore" -out "$dest" -pass env:INSTA_SAVER_SIGNING_PASSPHRASE
+          shred -u "$keystore" || rm -f "$keystore"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$dest"
+          git commit -m "Store encrypted permanent Insta Saver signing key"
+          git push origin HEAD:main
+          echo "Encrypted signing key committed. Preserve the Actions secret; losing it prevents future signed updates."
