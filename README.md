@@ -32,7 +32,10 @@ A debug APK is installable for testing, but is *not* a Play Store release and is
 - APK builds and offline Python tests also run for pull requests targeting main.
 - Instagram may require login, block requests or change its extraction protocol.
 - yt-dlp uses a single combined audio/video format where available. **No FFmpeg is bundled**; formats which require merging may fail.
-- No background service, cookie import, account handling, or analytics.
+- No background service or analytics. Instagram authentication is **optional** via user-imported Netscape-format `cookies.txt`; passwords are never requested by the app.
+- **Importing an Instagram session:** First confirm the Reel plays in your own signed-in account. Export **Instagram-only** cookies in Netscape format from a browser you trust (for example, a dedicated browser profile), save as `cookies.txt`, transfer it to your phone, and tap **Import Instagram cookies.txt (optional)** in Insta Saver. Tap **Remove Instagram login session** to delete the locally stored session. The app stores only Instagram-domain cookie rows in Android private app storage and does not send them to a backend.
+- A cookies file is sensitive account access material. Never commit it to GitHub, send it in a chat, upload it to a conversion website, or include it in debug logs. Revoke active sessions in Instagram if exposed. Use only an account allowed to view the Reel.
+- This does **not** bypass audience, age, geographic, or account restrictions. It does not guarantee Instagram access, and may need fresh cookies after expiration.
 - Only download media you own or have authorization to save.
 - This repository has not been validated on a physical device yet.
 
