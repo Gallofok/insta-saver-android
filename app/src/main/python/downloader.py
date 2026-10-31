@@ -155,7 +155,7 @@ def download_shorts(url, directory, prefix, listener, report, check_cancelled):
     report(92, "Preparing Android audio/video merge ...")
     return json.dumps({"video": str(video_file), "audio": str(audio_file)})
 
-def download_video(raw_url, output_dir, listener=None):
+def download_video(raw_url, output_dir, listener=None, instagram_cookies=None):
     from yt_dlp import YoutubeDL
     url, platform = normalize_supported_url(raw_url)
     directory = Path(output_dir)
@@ -208,10 +208,29 @@ def download_video(raw_url, output_dir, listener=None):
             else:
                 retained.add(Path(output))
             return output
+        # Only explicitly imported Instagram cookies are used. YouTube Shorts
+        # remains anonymous and never receives the Instagram session.
+        if instagram_cookies:
+            cookies = Path(instagram_cookies)
+            if not cookies.is_file():
+                raise ValueError("Imported Instagram session file was not found")
+            options["cookiefile"] = str(cookies)
         report(0, "Connecting to Instagram ...")
-        with YoutubeDL(options) as ydl:
-            _check_cancelled(listener)
-            ydl.extract_info(url, download=True)
+        try:
+            with YoutubeDL(options) as ydl:
+                _check_cancelled(listener)
+                ydl.extract_info(url, download=True)
+        except Exception as exc:
+            message = str(exc).lower()
+            if ("can't be seen by certain audiences" in message
+                    or "content isn't available to everyone" in message):
+                raise RuntimeError(
+                    "Instagram restricted this Reel to certain viewers. "
+                    "If your signed-in Instagram account can play it, import "
+                    "that account's Netscape cookies.txt in Insta Saver and retry. "
+                    "An account without viewing permission cannot download it."
+                ) from None
+            raise
         _check_cancelled(listener)
         videos = [p for p in directory.glob(prefix + "*")
                   if p.is_file() and p.suffix.lower() in _VIDEO and p.stat().st_size > 0]
