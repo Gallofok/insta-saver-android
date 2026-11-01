@@ -98,7 +98,11 @@ def choose_shorts_formats(formats):
 
 
 def download_shorts(url, directory, prefix, listener, report, check_cancelled):
-    """Return a media file path, or JSON with video/audio paths to remux on Android."""
+    """Return a media file path, or JSON with video/audio paths to remux on Android.
+
+    Inspect raw yt-dlp formats BEFORE running its format selector. The former
+    'format=all' metadata probe could itself raise a misleading format error.
+    """
     import json
     from yt_dlp import YoutubeDL
 
@@ -110,16 +114,58 @@ def download_shorts(url, directory, prefix, listener, report, check_cancelled):
         "fragment_retries": 3,
         "socket_timeout": 30,
         "cachedir": False,
-        # Request all formats for metadata; a format selector demanding combined
-        # streams would fail for typical Shorts.
-        "format": "all",
     }
-    report(0, "Checking available Shorts formats ...")
-    check_cancelled()
-    with YoutubeDL(base_options) as ydl:
-        details = ydl.extract_info(url, download=False)
-    check_cancelled()
-    mode, video_id, audio_id = choose_shorts_formats(details.get("formats", []))
+
+    chosen_options = None
+    failed_summaries = []
+    mode = video_id = audio_id = None
+
+    # Android can sometimes expose formats unavailable to the default YouTube
+    # player clients. A single fallback is used only if default returns no
+    # compatible formats, never for network errors or restricted content.
+    for attempt, client in (("default", None), ("android", "android")):
+        check_cancelled()
+        report(0, "Checking Shorts formats ({}) ...".format(attempt))
+        inspection_options = dict(base_options, ignore_no_formats_error=True)
+        if client:
+            inspection_options["extractor_args"] = {
+                "youtube": {"player_client": [client]}
+            }
+        # process=False skips yt-dlp's built-in format selection; 'all' doesn't.
+        with YoutubeDL(inspection_options) as ydl:
+            details = ydl.extract_info(url, download=False, process=False) or {}
+        check_cancelled()
+        formats = details.get("formats") or []
+        has_video = sum(1 for item in formats
+                        if item.get("vcodec") not in (None, "none"))
+        has_audio = sum(1 for item in formats
+                        if item.get("acodec") not in (None, "none"))
+        usable = sum(1 for item in formats
+                     if item.get("format_id") and item.get("url")
+                     and not item.get("has_drm"))
+        # Intentionally no format URLs, titles, headers, cookies, or tokens in logs.
+        report(1, "YouTube {}: {} formats, {} video, {} audio, {} accessible.".format(
+            attempt, len(formats), has_video, has_audio, usable))
+        try:
+            mode, video_id, audio_id = choose_shorts_formats(formats)
+        except RuntimeError:
+            failed_summaries.append(
+                "{}: {} total, {} accessible".format(attempt, len(formats), usable))
+            continue
+        chosen_options = inspection_options
+        report(2, "YouTube {} selected {} playback format.".format(attempt, mode))
+        break
+
+    if chosen_options is None:
+        raise RuntimeError(
+            "YouTube did not expose a compatible video+audio stream "
+            "for Android. Formats found: {}. This APK does not bundle "
+            "a JavaScript runtime / yt-dlp-ejs, so some Shorts cannot "
+            "be extracted. Check that the Short plays in your browser. "
+            "Try another network or update the extractor; retrying the "
+            "same link repeatedly is unlikely to help."
+            .format("; ".join(failed_summaries))
+        )
 
     def download_one(format_id, label, start, span):
         last = -1
@@ -132,14 +178,27 @@ def download_shorts(url, directory, prefix, listener, report, check_cancelled):
                 pct = min(99, int(100 * received / total)) if total else 0
                 if pct >= last + 2:
                     last = pct
-                    report(start + pct * span / 100.0, "Downloading Shorts {}: {}%".format(label, pct))
-        options = dict(base_options,
+                    report(start + pct * span / 100.0,
+                           "Downloading Shorts {}: {}%".format(label, pct))
+        options = dict(chosen_options,
                        format=str(format_id),
                        outtmpl=str(directory / (prefix + label + ".%(ext)s")),
                        progress_hooks=[hook])
+        # Only the selected client is reused for actual downloading.
+        # A second extraction still happens, since yt-dlp does not expose a
+        # stable reusable public API for serializing already parsed formats.
         check_cancelled()
-        with YoutubeDL(options) as ydl:
-            ydl.extract_info(url, download=True)
+        try:
+            with YoutubeDL(options) as ydl:
+                ydl.extract_info(url, download=True)
+        except Exception as exc:
+            if "requested format is not available" in str(exc).lower():
+                raise RuntimeError(
+                    "YouTube changed the available stream formats between "
+                    "inspection and download. This device may need a supported "
+                    "JS runtime and yt-dlp-ejs for reliable Shorts extraction."
+                ) from None
+            raise
         check_cancelled()
         files = [p for p in directory.glob(prefix + label + ".*")
                  if p.is_file() and p.suffix.lower() in _VIDEO.union({".m4a"})
