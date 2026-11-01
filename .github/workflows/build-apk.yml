@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, 'feat/cancel-and-cleanup-20261030', 'fix/instagram-cookie-import-20261031', 'feat/in-app-download-gallery-20261031', 'fix/gallery-permissions-20261031', 'fix/stable-apk-signing-20261031', 'feat/blue-ui-v037-20261101']
+    branches: [main, 'feat/cancel-and-cleanup-20261030', 'fix/instagram-cookie-import-20261031', 'feat/in-app-download-gallery-20261031', 'fix/gallery-permissions-20261031', 'fix/stable-apk-signing-20261031', 'feat/blue-ui-v037-20261101', 'fix/shorts-format-diagnostics-v038-20261101']
   workflow_dispatch:
 permissions:
   contents: read
