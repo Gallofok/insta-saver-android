@@ -2,9 +2,9 @@
 # Compile QuickJS-NG CLI for Android arm64 and bundle in read-only native lib dir.
 set -euo pipefail
 
-: "\${ANDROID_HOME:?Android SDK environment is required}"
+: "${ANDROID_HOME:?Android SDK environment is required}"
 NDK_VERSION="27.2.12479018"
-NDK_HOME="\${ANDROID_HOME}/ndk/\${NDK_VERSION}"
+NDK_HOME="${ANDROID_HOME}/ndk/${NDK_VERSION}"
 if [[ ! -f "$NDK_HOME/build/cmake/android.toolchain.cmake" ]]; then
   echo "Missing NDK $NDK_VERSION. Install via sdkmanager." >&2
   exit 1
