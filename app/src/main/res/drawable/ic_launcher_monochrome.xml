@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android themed-icons need a monochrome design. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M38,26 L74,26 Q80,26 80,32 L80,59 Q80,65 74,65 L38,65 Q32,65 32,59 L32,32 Q32,26 38,26 Z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#000000"
+        android:strokeWidth="3" android:pathData="M42,34 L70,34 L70,55 L42,55 Z"/>
+    <path android:fillColor="#000000" android:pathData="M50,37 L50,52 L63,45 Z"/>
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M49,52 L59,52 L59,72 L66,65 L72,71 L54,88 L36,71 L42,65 L49,72 Z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF"
+        android:strokeWidth="5" android:strokeLineCap="round"
+        android:pathData="M30,82 L30,87 L78,87 L78,82"/>
+</vector>
