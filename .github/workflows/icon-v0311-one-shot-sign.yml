@@ -69,7 +69,7 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/signature-verification.txt"
           cat "$RUNNER_TEMP/signature-verification.txt"
           grep -Fq '880c9f0e7c4e508662cf92dd993df919c4181979377e4138d3d99b15cd8d6859' "$RUNNER_TEMP/signature-verification.txt"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -E "^package: name='com.gallofok.instasaver' versionCode='14' versionName='0.3.10'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep -E "^package: name='com.gallofok.instasaver' versionCode='14' versionName='0.3.11'"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" list "$apk" |
             grep -F 'lib/arm64-v8a/libqjs.so'
           # Confirm launcher resource entries, and that AndroidManifest
