@@ -196,7 +196,7 @@ class ShortsUrlTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as directory:
                 with self.assertRaisesRegex(RuntimeError, "0 total, 0 accessible") as cm:
                     download_video(SAMPLE_SHORTS, directory)
-                self.assertIn("JS runtime", str(cm.exception))
+                self.assertIn("JavaScript runtime", str(cm.exception))
                 self.assertNotIn("https://", str(cm.exception))
 
     def test_download_format_disappears_has_helpful_error(self):
