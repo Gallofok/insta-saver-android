@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, 'feat/cancel-and-cleanup-20261030', 'fix/instagram-cookie-import-20261031', 'feat/in-app-download-gallery-20261031', 'fix/gallery-permissions-20261031', 'fix/stable-apk-signing-20261031', 'feat/blue-ui-v037-20261101', 'fix/shorts-format-diagnostics-v038-20261101', 'fix/shorts-403-recovery-v039-20261101']
+    branches: [main, 'feat/cancel-and-cleanup-20261030', 'fix/instagram-cookie-import-20261031', 'feat/in-app-download-gallery-20261031', 'fix/gallery-permissions-20261031', 'fix/stable-apk-signing-20261031', 'feat/blue-ui-v037-20261101', 'fix/shorts-format-diagnostics-v038-20261101', 'fix/shorts-403-recovery-v039-20261101', 'feat/quickjs-ejs-android-v0310-20261101']
   workflow_dispatch:
 permissions:
   contents: read
@@ -71,6 +71,16 @@ jobs:
         run: |
           "$ANDROID_HOME/build-tools/35.0.0/aapt" list app/build/outputs/apk/debug/app-debug.apk |
             grep -F 'lib/arm64-v8a/libqjs.so'
+      - name: Verify adaptive launcher icons in APK
+        shell: bash
+        run: |
+          apk='app/build/outputs/apk/debug/app-debug.apk'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" list "$apk" |
+            grep -F 'res/mipmap-anydpi-v26/ic_launcher.xml'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" list "$apk" |
+            grep -F 'res/mipmap-anydpi-v26/ic_launcher_round.xml'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" |
+            grep -F "versionCode='14' versionName='0.3.11'"
       - name: Verify stable APK signature
         if: github.event_name == 'workflow_dispatch'
         shell: bash
