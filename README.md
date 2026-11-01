@@ -4,6 +4,16 @@ Experimental **on-device** Instagram Reel and **YouTube Shorts** downloader for 
 The native Java interface invokes embedded Python **yt-dlp** through Chaquopy.
 **No Media Saver server** is needed.
 
+## Experimental Android QuickJS + yt-dlp-ejs (v0.3.10)
+
+**Purpose:** address missing YouTube JS challenge handling seen as media HTTP 403 errors on Shorts `J5He-tp7LAU`. This experiment does not promise to solve all 403s, because YouTube may additionally require a PO Token for GVS media requests or may restrict the account/IP. Refer to yt-dlp's official [EJS guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS) and [PO Token guide](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide).
+
+- GitHub Actions cross-compiles open-source **QuickJS-NG v0.17.0** for Android ARM64 using the Android NDK, packages the CLI binary in the extracted `nativeLibraryDir` as `libqjs.so`, and includes **`yt-dlp[default]`** to supply the matching `yt-dlp-ejs` scripts.
+- The Java layer passes the native executable path to Chaquopy; Python enables `js_runtimes={'quickjs': {'path': ...}}` only for YouTube Shorts. Instagram sessions, media gallery, blue interface, shared files, and permanent signing stay unchanged.
+- Runtime discovery is logged without sensitive URLs, tokens or Cookies. CI builds verify the ARM64 ELF and native APK entry; only Pixel device testing can confirm Android can actually execute the bundled runtime and that specific Shorts play correctly.
+- The application never downloads and executes untrusted binaries in writable app storage; QuickJS is built in CI from a pinned upstream tag and extracted as a read-only native library entry on Android.
+- This experiment remains a separate PR until real-device verification. **Do not merge the test implementation into main without confirming signed upgrade and runtime behavior.**
+
 ## YouTube stream 403 recovery (v0.3.9)
 
 - v0.3.8 sometimes found suitable Shorts media formats but the YouTube content-delivery endpoint then returned **HTTP 403 Forbidden** when downloading the actual bytes.
