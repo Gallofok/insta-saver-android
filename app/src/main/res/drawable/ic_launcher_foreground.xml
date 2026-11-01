@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vector-only branded launcher artwork: image, video and download.
+     Geometry stays inside Android's adaptive icon safe area. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Instagram-style image tile. -->
+    <group android:rotation="-13" android:pivotX="42" android:pivotY="48">
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M26,27 L56,27 Q62,27 62,33 L62,63 Q62,69 56,69 L26,69 Q20,69 20,63 L20,33 Q20,27 26,27 Z"/>
+        <path android:fillColor="#AC3BC7"
+            android:pathData="M27,31 L55,31 Q58,31 58,34 L58,62 Q58,65 55,65 L27,65 Q24,65 24,62 L24,34 Q24,31 27,31 Z"/>
+        <path android:fillColor="#F14D9B"
+            android:pathData="M24,53 L30,46 L37,53 L45,40 L58,56 L58,62 Q58,65 55,65 L27,65 Q24,65 24,62 Z"/>
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M29,56 L38,44 Q39,42 41,44 L46,50 L49,47 Q50,46 52,48 L58,56 L58,61 L24,61 Z"/>
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M46,37 A3.5,3.5 0,1 1,39 37 A3.5,3.5 0,1 1,46 37 Z"/>
+    </group>
+    <!-- Shorts-style film tile, overlaps image tile. -->
+    <group android:rotation="12" android:pivotX="70" android:pivotY="50">
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M56,29 L83,29 Q89,29 89,35 L89,66 Q89,72 83,72 L56,72 Q50,72 50,66 L50,35 Q50,29 56,29 Z"/>
+        <path android:fillColor="#F32632"
+            android:pathData="M57,33 L82,33 Q85,33 85,36 L85,65 Q85,68 82,68 L57,68 Q54,68 54,65 L54,36 Q54,33 57,33 Z"/>
+        <!-- Tiny film clapper stripes -->
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M62,33 L67,33 L60,43 L55,43 Z M74,33 L79,33 L72,43 L67,43 Z M84,34 L85,36 L85,43 L80,43 Z"/>
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M66,47 Q66,45 68,46 L80,53 Q82,54 80,55 L68,62 Q66,63 66,61 Z"/>
+    </group>
+    <!-- Blue shadow gives the foreground arrow legibility on colorful cards. -->
+    <path android:fillColor="#B0033BA9"
+        android:pathData="M48,51 Q48,48 51,48 L58,48 Q61,48 61,51 L61,66 L66,61 Q68,59 70,62 L73,65 Q75,67 73,69 L57,85 Q55,87 53,85 L37,69 Q35,67 37,65 L40,62 Q42,59 44,61 L48,65 Z"/>
+    <!-- White downward arrow. -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M49,51 Q49,49 51,49 L57,49 Q59,49 59,51 L59,69 L64,64 Q66,62 68,64 L71,67 Q72,68 70,70 L56,82 Q54,84 52,82 L38,70 Q36,68 38,67 L41,64 Q43,62 45,64 L49,69 Z"/>
+    <!-- White download tray -->
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF"
+        android:strokeWidth="5" android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M30,81 L30,85 Q30,90 35,90 L73,90 Q78,90 78,85 L78,81"/>
+</vector>
