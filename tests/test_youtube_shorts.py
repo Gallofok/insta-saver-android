@@ -220,5 +220,103 @@ class ShortsUrlTests(unittest.TestCase):
                     download_video(SAMPLE_SHORTS, directory)
 
 
+    def test_stream_403_switches_client_then_downloads(self):
+        events = []
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def extract_info(self, url, download, process=True):
+                client = (self.opts.get("extractor_args") or {}).get(
+                    "youtube", {}).get("player_client")
+                events.append((client, download, process))
+                if not download:
+                    return {"formats": [
+                        {"format_id": "18", "ext": "mp4", "vcodec": "avc1",
+                         "acodec": "mp4a.40.2", "url": "https://example.test/18"}
+                    ]}
+                target = Path(self.opts["outtmpl"].replace("%(ext)s", "mp4"))
+                if not client:
+                    # A failing CDN may leave partial bytes. They must not be reused.
+                    Path(str(target) + ".part").write_bytes(b"partial")
+                    raise RuntimeError("HTTP Error 403: Forbidden")
+                self.assert_clean = not list(target.parent.glob("*.part"))
+                if not self.assert_clean:
+                    raise RuntimeError("stale partial file")
+                target.write_bytes(b"valid mp4")
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(download_video(
+                    "https://m.youtube.com/shorts/J5He-tp7LAU", directory))
+                self.assertTrue(path.is_file())
+                self.assertEqual(sorted(p.suffix for p in Path(directory).iterdir()), [".mp4"])
+        self.assertEqual(events, [
+            (None, False, False),
+            (None, True, True),
+            (["android"], False, False),
+            (["android"], True, True),
+        ])
+
+    def test_403_on_both_clients_gives_safe_bounded_error(self):
+        events = []
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def extract_info(self, url, download, process=True):
+                client = (self.opts.get("extractor_args") or {}).get(
+                    "youtube", {}).get("player_client")
+                events.append((client, download))
+                if not download:
+                    return {"formats": [
+                        {"format_id": "18", "ext": "mp4", "vcodec": "avc1",
+                         "acodec": "mp4a.40.2", "url": "https://private.example/signed-secret"}
+                    ]}
+                raise RuntimeError(
+                    "ERROR: unable to download video data: "
+                    "HTTP Error 403: Forbidden https://private.example/signed-secret")
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(RuntimeError, "YouTube returned HTTP 403") as ctx:
+                    download_video(SAMPLE_SHORTS, directory)
+                self.assertIn("default: stream HTTP 403", str(ctx.exception))
+                self.assertIn("android: stream HTTP 403", str(ctx.exception))
+                self.assertNotIn("signed-secret", str(ctx.exception))
+        self.assertEqual(events, [
+            (None, False), (None, True), (["android"], False), (["android"], True)
+        ])
+
+    def test_non_403_error_does_not_trigger_more_player_clients(self):
+        events = []
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def extract_info(self, url, download, process=True):
+                client = (self.opts.get("extractor_args") or {}).get(
+                    "youtube", {}).get("player_client")
+                events.append(client)
+                if not download:
+                    return {"formats": [
+                        {"format_id": "18", "ext": "mp4", "vcodec": "avc1",
+                         "acodec": "mp4a.40.2", "url": "https://example.test/18"}
+                    ]}
+                raise RuntimeError("Unable to resolve host: No address associated with hostname")
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(RuntimeError, "No address associated"):
+                    download_video(SAMPLE_SHORTS, directory)
+        self.assertEqual(events, [None, None])
+
+
 if __name__ == "__main__":
     unittest.main()
