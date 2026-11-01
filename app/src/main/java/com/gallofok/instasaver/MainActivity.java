@@ -772,6 +772,13 @@ public class MainActivity extends Activity {
                 if (cancelled) return;
                 progressBar.setProgress((int) Math.max(0, Math.min(99, percent)));
                 status(message);
+                // Only safe, bounded engine diagnostics are copied into the
+                // debug log. Never log signed YouTube stream URLs or cookies.
+                if (message.startsWith("YouTube JavaScript runtime:")
+                        || message.startsWith("YouTube default:")
+                        || message.startsWith("YouTube android:")) {
+                    log(message);
+                }
             });
         }
     }
