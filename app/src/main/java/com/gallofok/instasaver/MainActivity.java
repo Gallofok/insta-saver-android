@@ -114,6 +114,13 @@ public class MainActivity extends Activity {
         controls.addView(paste);
         paste.setOnClickListener(v -> pasteClipboard());
 
+        // Video gallery is deliberately independent of network downloads.
+        Button myDownloads = new Button(this);
+        myDownloads.setText("My downloaded videos");
+        content.addView(myDownloads);
+        myDownloads.setOnClickListener(v ->
+            startActivity(new Intent(this, DownloadsActivity.class)));
+
         Button importCookies = new Button(this);
         importCookies.setText("Import Instagram cookies.txt (optional)");
         content.addView(importCookies);
@@ -326,7 +333,9 @@ public class MainActivity extends Activity {
                     progressBar.setProgress(100);
                     status("Saved to Movies/InstaSaver");
                     log("Saved: " + saved);
-                    Toast.makeText(this, "Video saved", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this,
+                        "Video saved. Tap My downloaded videos to watch.",
+                        Toast.LENGTH_LONG).show();
                     complete();
                 });
             } catch (Exception e) {

@@ -8,6 +8,10 @@ The native Java interface invokes embedded Python **yt-dlp** through Chaquopy.
 - Instagram Reel or YouTube Shorts → **Share** → **Insta Saver** receives a link and starts downloading.
 - Or paste a public Reel/post/Shorts URL in the app and press **Download video**.
 - Saves to **Movies/InstaSaver** using Android MediaStore without broad storage permissions.
+- **My downloaded videos** opens an in-app, two-column gallery of videos saved in `Movies/InstaSaver`, with thumbnails, duration, saved date, a refresh button, and tap-to-play using an in-app Android player.
+- Gallery playback is offline and does **not** require an Instagram/YouTube connection.
+- The gallery intentionally lists app-owned MediaStore videos without asking for broad media access permissions; after uninstall/reinstall, Android may treat older saved videos as media owned by another app installation and not expose them without additional permission. Updating the APK in place preserves app ownership and imported cookies.
+- Up to 80 newest videos are displayed, newest first; existing downloads are not recopied or duplicated.
 - Visible progress, error messages and a copyable debug log.
 - **Cancel download** while yt-dlp is running. Partial downloads are cleaned up on cancellation or failure.
 - The download runs in the foreground. Keep the app open.
@@ -42,7 +46,9 @@ A debug APK is installable for testing, but is *not* a Play Store release and is
 - This repository has not been validated on a physical device yet.
 
 ## Development
-- `app/src/main/java/com/gallofok/instasaver/MainActivity.java` — UI, shares, gallery saving.
+- `app/src/main/java/com/gallofok/instasaver/MainActivity.java` — download UI, shares, gallery saving.
+- `app/src/main/java/com/gallofok/instasaver/DownloadsActivity.java` — in-app saved-video grid and thumbnails.
+- `app/src/main/java/com/gallofok/instasaver/VideoPlayerActivity.java` — offline video playback.
 - `app/src/main/python/downloader.py` — local yt-dlp extraction and progress.
 - `tests/test_downloader.py` and `tests/test_youtube_shorts.py` — offline Python tests.
 - `.github/workflows/build-apk.yml` — automated Gradle debug APK.
