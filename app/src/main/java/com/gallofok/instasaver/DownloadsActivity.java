@@ -9,6 +9,8 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
@@ -66,41 +68,53 @@ public final class DownloadsActivity extends Activity {
         super.onCreate(state);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(249, 250, 252));
-        root.setPadding(dp(12), dp(18), dp(12), dp(8));
+        root.setBackgroundColor(Color.rgb(246, 250, 255));
+        root.setPadding(dp(14), dp(18), dp(14), dp(8));
         setContentView(root);
 
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setPadding(dp(12), dp(12), dp(10), dp(12));
+        header.setBackground(blueGradient(20));
         root.addView(header, new LinearLayout.LayoutParams(-1, -2));
 
         TextView title = new TextView(this);
         title.setText("My downloaded videos");
-        title.setTextSize(22);
-        title.setTextColor(Color.rgb(32, 45, 79));
+        title.setTextSize(19);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setTextColor(Color.rgb(12, 40, 112));
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
 
         Button refresh = new Button(this);
-        refresh.setText("Refresh");
+        refresh.setAllCaps(false);
+        refresh.setText("↻ Refresh");
+        refresh.setTextSize(12);
+        refresh.setTextColor(Color.rgb(19, 85, 216));
+        refresh.setBackground(solid(Color.rgb(226, 242, 255), 14));
         header.addView(refresh);
         refresh.setOnClickListener(v -> refreshGallery());
 
         summary = new TextView(this);
-        summary.setTextColor(Color.DKGRAY);
+        summary.setTextColor(Color.rgb(76, 105, 146));
         summary.setTextSize(13);
-        summary.setPadding(dp(4), dp(4), 0, dp(10));
+        summary.setPadding(dp(8), dp(12), 0, dp(10));
         root.addView(summary);
 
         accessHint = new TextView(this);
-        accessHint.setTextColor(Color.DKGRAY);
+        accessHint.setTextColor(Color.rgb(80, 108, 144));
         accessHint.setTextSize(13);
         accessHint.setPadding(dp(4), dp(2), dp(4), 0);
         root.addView(accessHint);
 
         accessButton = new Button(this);
         accessButton.setText("Allow access to older downloads");
-        root.addView(accessButton, new LinearLayout.LayoutParams(-1, -2));
+        accessButton.setAllCaps(false);
+        accessButton.setTextColor(Color.rgb(19, 85, 216));
+        accessButton.setBackground(solid(Color.rgb(222, 240, 255), 16));
+        LinearLayout.LayoutParams accessParams = new LinearLayout.LayoutParams(-1, dp(50));
+        accessParams.bottomMargin = dp(8);
+        root.addView(accessButton, accessParams);
         accessButton.setOnClickListener(v -> requestVideoAccess());
 
         ScrollView scroll = new ScrollView(this);
@@ -116,6 +130,21 @@ public final class DownloadsActivity extends Activity {
         super.onResume();
         updateAccessControls();
         refreshGallery();
+    }
+
+    private GradientDrawable solid(int color, int radius) {
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(color);
+        bg.setCornerRadius(dp(radius));
+        return bg;
+    }
+
+    private GradientDrawable blueGradient(int radius) {
+        GradientDrawable bg = new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            new int[]{Color.rgb(239, 250, 255), Color.rgb(205, 231, 255)});
+        bg.setCornerRadius(dp(radius));
+        return bg;
     }
 
     private int dp(int n) {
@@ -255,7 +284,7 @@ public final class DownloadsActivity extends Activity {
         TextView empty = new TextView(this);
         empty.setText(message);
         empty.setTextSize(15);
-        empty.setTextColor(Color.DKGRAY);
+        empty.setTextColor(Color.rgb(76, 105, 146));
         empty.setPadding(dp(10), dp(24), dp(10), dp(12));
         listRoot.addView(empty);
     }
@@ -269,7 +298,9 @@ public final class DownloadsActivity extends Activity {
         for (SavedVideo item : items) {
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
-            card.setBackgroundColor(Color.WHITE);
+            GradientDrawable cardBg = solid(Color.WHITE, 16);
+            cardBg.setStroke(dp(1), Color.rgb(216, 233, 252));
+            card.setBackground(cardBg);
             card.setPadding(dp(6), dp(6), dp(6), dp(10));
             card.setClickable(true);
             GridLayout.LayoutParams params = new GridLayout.LayoutParams(
@@ -281,7 +312,8 @@ public final class DownloadsActivity extends Activity {
             grid.addView(card, params);
 
             ImageView thumbnail = new ImageView(this);
-            thumbnail.setBackgroundColor(Color.rgb(225, 229, 235));
+            thumbnail.setBackground(solid(Color.rgb(215, 235, 253), 12));
+            thumbnail.setClipToOutline(true);
             thumbnail.setImageResource(android.R.drawable.ic_media_play);
             thumbnail.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
             card.addView(thumbnail, new LinearLayout.LayoutParams(-1, dp(150)));
@@ -291,7 +323,8 @@ public final class DownloadsActivity extends Activity {
             name.setText(item.name);
             name.setSingleLine(true);
             name.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-            name.setTextColor(Color.rgb(37, 50, 70));
+            name.setTextColor(Color.rgb(12, 40, 112));
+            name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
             name.setTextSize(12);
             name.setPadding(0, dp(7), 0, 0);
             card.addView(name);
@@ -306,7 +339,7 @@ public final class DownloadsActivity extends Activity {
                 : "Unknown date";
             details.setText(duration + " · " + date);
             details.setTextSize(11);
-            details.setTextColor(Color.GRAY);
+            details.setTextColor(Color.rgb(80, 108, 144));
             card.addView(details);
 
             card.setOnClickListener(v -> {
