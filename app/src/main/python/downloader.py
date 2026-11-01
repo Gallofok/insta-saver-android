@@ -124,7 +124,15 @@ def download_shorts(url, directory, prefix, listener, report, check_cancelled, j
         base_options["js_runtimes"] = {
             "quickjs": {"path": str(js_runtime_path)}
         }
-        report(0, "YouTube JavaScript runtime: QuickJS bundled; EJS enabled.")
+        # Verify that the companion EJS package is actually installed. This
+        # doesn't guarantee the external binary can run on the device.
+        from importlib.metadata import PackageNotFoundError, version
+        try:
+            ejs_version = version("yt-dlp-ejs")
+            report(0, "YouTube JavaScript runtime: QuickJS bundled; EJS {}".format(
+                ejs_version))
+        except PackageNotFoundError:
+            report(0, "YouTube JavaScript runtime: QuickJS bundled; EJS scripts missing.")
     else:
         report(0, "YouTube JavaScript runtime not found; some streams may return 403.")
 
