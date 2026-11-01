@@ -30,6 +30,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Locale;
+import org.json.JSONObject;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
@@ -37,12 +38,15 @@ import java.util.regex.Pattern;
 
 /** Small standalone Android UI; Python yt-dlp runs only on a worker thread. */
 public class MainActivity extends Activity {
-    private static final Pattern INSTAGRAM_URL = Pattern.compile(
-        "https?://(?:www\\.|m\\.)?instagram\\.com/(?:reel|reels|p|tv)/[A-Za-z0-9_-]+[^\\s]*",
+    private static final Pattern SUPPORTED_URL = Pattern.compile(
+        "https?://(?:www\\.|m\\.)?instagram\\.com/(?:reel|reels|p|tv)/[A-Za-z0-9_-]+[^\\s]*"
+        + "|https?://(?:www\\.|m\\.)?youtube\\.com/shorts/[A-Za-z0-9_-]{11}(?:[/?#][^\\s]*)?",
         Pattern.CASE_INSENSITIVE);
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private EditText urlInput;
     private Button downloadButton;
+    private Button cancelButton;
+    private volatile ProgressCallback activeCallback;
     private ProgressBar progressBar;
     private TextView statusText;
     private TextView logText;
@@ -80,13 +84,13 @@ public class MainActivity extends Activity {
         content.addView(title);
 
         TextView intro = new TextView(this);
-        intro.setText("Share an Instagram Reel to this app or paste its link. Downloads run on-device using yt-dlp.");
+        intro.setText("Share an Instagram Reel or YouTube Short to this app, or paste its link. Downloads run on-device using yt-dlp.");
         intro.setTextSize(15);
         intro.setPadding(0, dp(10), 0, dp(18));
         content.addView(intro);
 
         urlInput = new EditText(this);
-        urlInput.setHint("https://www.instagram.com/reel/...");
+        urlInput.setHint("https://m.youtube.com/shorts/...");
         urlInput.setTextSize(14);
         urlInput.setSingleLine(false);
         urlInput.setMinLines(2);
@@ -104,6 +108,18 @@ public class MainActivity extends Activity {
         paste.setText("Paste");
         controls.addView(paste);
         paste.setOnClickListener(v -> pasteClipboard());
+
+        cancelButton = new Button(this);
+        cancelButton.setText("Cancel download");
+        cancelButton.setEnabled(false);
+        content.addView(cancelButton);
+        cancelButton.setOnClickListener(v -> {
+            ProgressCallback callback = activeCallback;
+            if (callback == null) return;
+            callback.cancel();
+            cancelButton.setEnabled(false);
+            status("Cancelling download ...");
+        });
 
         progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progressBar.setMax(100);
@@ -135,7 +151,7 @@ public class MainActivity extends Activity {
         logText.setTextIsSelectable(true);
         logText.setPadding(0, dp(8), 0, dp(8));
         content.addView(logText);
-        log("Initialized. Public Instagram posts only. Keep app open while downloading.");
+        log("Initialized. Public Instagram posts and YouTube Shorts only. Keep app open while downloading.");
     }
 
     private void pasteClipboard() {
@@ -147,7 +163,7 @@ public class MainActivity extends Activity {
     }
 
     private static String extractUrl(String input) {
-        Matcher matcher = INSTAGRAM_URL.matcher(input);
+        Matcher matcher = SUPPORTED_URL.matcher(input);
         return matcher.find() ? matcher.group().replaceAll("[),.\\]]+$", "") : input.trim();
     }
 
@@ -174,8 +190,8 @@ public class MainActivity extends Activity {
     private void download() {
         if (downloading) return;
         final String source = extractUrl(urlInput.getText().toString());
-        if (!source.startsWith("https://") && !source.startsWith("http://")) {
-            status("Enter an Instagram Reel URL");
+        if (!SUPPORTED_URL.matcher(source).matches()) {
+            status("Enter an Instagram Reel or YouTube Shorts URL");
             return;
         }
         urlInput.setText(source);
@@ -189,15 +205,39 @@ public class MainActivity extends Activity {
             fail("Cannot create downloads directory");
             return;
         }
+        final ProgressCallback callback = new ProgressCallback();
+        activeCallback = callback;
+        cancelButton.setEnabled(true);
         worker.execute(() -> {
+            File downloadedFile = null;
+            File videoTrack = null;
+            File audioTrack = null;
+            File mergedFile = null;
             try {
+                if (callback.isCancelled()) throw new IOException("Cancelled by user");
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
                 PyObject module = Python.getInstance().getModule("downloader");
-                PyObject value = module.callAttr("download_reel", source, cache.getAbsolutePath(), new ProgressCallback());
-                File file = new File(value.toString());
-                runOnUiThread(() -> status("Saving to Android gallery ..."));
-                Uri saved = copyToGallery(file);
-                if (!file.delete()) { /* Android will eventually reclaim cache. */ }
+                PyObject value = module.callAttr("download_video", source, cache.getAbsolutePath(), callback);
+                String result = value.toString();
+                if (result.startsWith("{")) {
+                    JSONObject parts = new JSONObject(result);
+                    videoTrack = new File(parts.getString("video"));
+                    audioTrack = new File(parts.getString("audio"));
+                    mergedFile = new File(cache, "shorts_merged_" + System.nanoTime() + ".mp4");
+                    runOnUiThread(() -> status("Merging Shorts video and audio ..."));
+                    Mp4TracksMuxer.merge(videoTrack, audioTrack, mergedFile, callback::isCancelled);
+                    downloadedFile = mergedFile;
+                } else {
+                    downloadedFile = new File(result);
+                }
+                if (callback.isCancelled()) throw new IOException("Cancelled by user");
+                // Saving to MediaStore is not cancellable once the copy begins.
+                activeCallback = null;
+                runOnUiThread(() -> {
+                    cancelButton.setEnabled(false);
+                    status("Saving to Android gallery ...");
+                });
+                Uri saved = copyToGallery(downloadedFile);
                 runOnUiThread(() -> {
                     progressBar.setProgress(100);
                     status("Saved to Movies/InstaSaver");
@@ -206,15 +246,38 @@ public class MainActivity extends Activity {
                     complete();
                 });
             } catch (Exception e) {
-                runOnUiThread(() -> fail(e.toString()));
+                runOnUiThread(() -> {
+                    if (callback.isCancelled()) {
+                        status("Download cancelled");
+                        log("Cancelled by user");
+                        complete();
+                    } else {
+                        fail(e.toString());
+                    }
+                });
+            } finally {
+                activeCallback = null;
+                // Clean up both component streams and merged output, including on errors.
+                if (downloadedFile != null && downloadedFile.isFile()) downloadedFile.delete();
+                if (videoTrack != null && videoTrack.isFile()) videoTrack.delete();
+                if (audioTrack != null && audioTrack.isFile()) audioTrack.delete();
+                if (mergedFile != null && mergedFile.isFile()) mergedFile.delete();
             }
         });
     }
 
     /** Chaquopy exposes this Java object as an ordinary Python callback. */
     public final class ProgressCallback {
+        private volatile boolean cancelled = false;
+
+        public boolean isCancelled() { return cancelled; }
+
+        void cancel() { cancelled = true; }
+
         public void report(double percent, String message) {
+            if (cancelled) return;
             runOnUiThread(() -> {
+                if (cancelled) return;
                 progressBar.setProgress((int) Math.max(0, Math.min(99, percent)));
                 status(message);
             });
@@ -264,6 +327,8 @@ public class MainActivity extends Activity {
 
     private void complete() {
         downloading = false;
+        activeCallback = null;
+        cancelButton.setEnabled(false);
         downloadButton.setEnabled(true);
     }
 
