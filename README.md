@@ -19,13 +19,20 @@ The native Java interface invokes embedded Python **yt-dlp** through Chaquopy.
 - **Cancel download** while yt-dlp is running. Partial downloads are cleaned up on cancellation or failure.
 - The download runs in the foreground. Keep the app open.
 
-## GitHub Actions: build an APK without a computer
-1. Open this repository's **Actions** tab.
-2. Select **Build debug APK**, then **Run workflow** (or push to main).
-3. After the run succeeds, open the run's **Artifacts** section.
-4. Download **insta-saver-debug-apk**, extract the ZIP and install `app-debug.apk`.
+## Permanent APK signing: Pixel-only setup (v0.3.6 and later)
 
-A debug APK is installable for testing, but is *not* a Play Store release and is signed with a debug certificate.
+Older GitHub-hosted debug builds used disposable signing keys, so Android could not install them as updates. **The first installation of v0.3.6 with the new signing key will require uninstalling the older APK once. After that, all signed updates can install on top, provided the key and `applicationId` stay unchanged and each `versionCode` increases.** Uninstalling clears app-private Cookie files, but downloaded media in the shared `Movies/InstaSaver` folder should remain.
+
+Set this up only once, using the GitHub website on your Pixel:
+1. In this repository, open **Settings → Secrets and variables → Actions → New repository secret**. On a small screen, enable the browser's **Desktop site** mode if necessary.
+2. Use secret name `INSTA_SAVER_SIGNING_PASSPHRASE`. For its value, generate a **unique random 32+ character password** in a password manager; back it up securely. Do not send the password to anyone or place it in source files, logs or issues. Losing it means losing the ability to sign compatible updates. Unicode passwords are supported: the bootstrap hashes the UTF-8 passphrase to a stable ASCII password for Java keytool/PKCS12, while OpenSSL encrypts the keystore with the original passphrase.
+3. Open **Actions → Initialize permanent APK signing key**. Select branch **main** and click **Run workflow**. This runs once: it creates a PKCS#12 key in a temporary CI directory, encrypts it with AES-256 + PBKDF2 and commits **only the encrypted keystore** to `main` at `.github/signing/insta-saver-signing.p12.enc`. Re-running it will refuse to replace the key.
+4. Open **Actions → Build debug APK**. Choose **Run workflow**, select the code branch containing the latest version (currently `fix/stable-apk-signing-20261031`), then run it manually. **Only manually triggered builds get access to the secret and publish an installable APK.** Ordinary PR builds do their tests without the secret and publish no APK.
+5. When the run succeeds, open **Artifacts → insta-saver-stable-signed-apk**, download the ZIP, unzip and install `app-debug.apk`.
+
+The first install from an ephemeral-signed APK requires uninstalling that previous APK because the prior signing key cannot be recovered. Afterwards, installing newer stable-signed APKs directly should preserve imported cookies and app settings. Keep the signing secret permanently and never trigger the key initialization again. **Do not change the encryption password without also re-encrypting the stored keystore**; changing the secret alone makes builds fail. The signing key is for personal sideloading/testing, not a Play Store production release.
+
+If the GitHub bootstrap workflow cannot push its encrypted keystore due to branch rules or disabled Action write permissions, check repository **Settings → Actions → General → Workflow permissions** and branch protection rather than committing an unencrypted key.
 
 ## Scope and limits
 - Supported platforms: public Instagram Reel/post and **YouTube Shorts only**. YouTube watch, playlists, channels and youtu.be links are not supported.

@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, 'feat/cancel-and-cleanup-20261030', 'fix/instagram-cookie-import-20261031', 'feat/in-app-download-gallery-20261031']
+    branches: [main, 'feat/cancel-and-cleanup-20261030', 'fix/instagram-cookie-import-20261031', 'feat/in-app-download-gallery-20261031', 'fix/gallery-permissions-20261031']
   workflow_dispatch:
 permissions:
   contents: read
@@ -29,10 +29,47 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
+      - name: Restore permanent signing key for manual release builds
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          INSTA_SAVER_SIGNING_PASSPHRASE: ${{ secrets.INSTA_SAVER_SIGNING_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${INSTA_SAVER_SIGNING_PASSPHRASE:-}" ]]; then
+            echo "::error::Add Actions repository secret INSTA_SAVER_SIGNING_PASSPHRASE first."
+            exit 1
+          fi
+          # The one-time bootstrap workflow stores ONLY the AES-encrypted keystore on main.
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          if ! git cat-file -e "origin/main:.github/signing/insta-saver-signing.p12.enc" 2>/dev/null; then
+            echo "::error::Run 'Initialize permanent APK signing key' on main once before a signed build."
+            exit 1
+          fi
+          umask 077
+          git show "origin/main:.github/signing/insta-saver-signing.p12.enc" > "$RUNNER_TEMP/signing.p12.enc"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 300000 \
+            -in "$RUNNER_TEMP/signing.p12.enc" \
+            -out "$RUNNER_TEMP/insta-saver-signing.p12" \
+            -pass env:INSTA_SAVER_SIGNING_PASSPHRASE
+          echo "INSTA_SAVER_KEYSTORE_FILE=$RUNNER_TEMP/insta-saver-signing.p12" >> "$GITHUB_ENV"
+          # Convert the original UTF-8 secret into the same stable ASCII
+          # password used by the one-time keytool bootstrap.
+          keystore_password="$(printf '%s' "$INSTA_SAVER_SIGNING_PASSPHRASE" | sha256sum | cut -d' ' -f1)"
+          echo "::add-mask::$keystore_password"
+          echo "INSTA_SAVER_KEYSTORE_PASSWORD=$keystore_password" >> "$GITHUB_ENV"
       - name: Build debug APK
+        # CI's PR/push builds have neither keystore nor its derived password.
         run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Verify stable APK signature
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with:
-          name: insta-saver-debug-apk
+          name: insta-saver-stable-signed-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
