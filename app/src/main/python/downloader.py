@@ -155,7 +155,7 @@ def download_shorts(url, directory, prefix, listener, report, check_cancelled):
     report(92, "Preparing Android audio/video merge ...")
     return json.dumps({"video": str(video_file), "audio": str(audio_file)})
 
-def download_video(raw_url, output_dir, listener=None):
+def download_video(raw_url, output_dir, listener=None, instagram_cookies=None):
     from yt_dlp import YoutubeDL
     url, platform = normalize_supported_url(raw_url)
     directory = Path(output_dir)
@@ -184,8 +184,11 @@ def download_video(raw_url, output_dir, listener=None):
 
     options = {
         "outtmpl": str(directory / (prefix + "%(id)s.%(ext)s")),
-        # No FFmpeg is bundled: only select a single file containing BOTH video and audio.
-        "format": "best[ext=mp4][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]",
+        # Prefer a single MP4 carrying picture and audio, then any combined file.
+        # Instagram can also expose video-only formats: allow those as fallback
+        # rather than rejecting an otherwise downloadable Reel.
+        # No FFmpeg is bundled, so we never select separate tracks to merge.
+        "format": "best[ext=mp4]/best/bv*[ext=mp4]/bv*",
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
@@ -208,15 +211,80 @@ def download_video(raw_url, output_dir, listener=None):
             else:
                 retained.add(Path(output))
             return output
+        # Only explicitly imported Instagram cookies are used. YouTube Shorts
+        # remains anonymous and never receives the Instagram session.
+        if instagram_cookies:
+            cookies = Path(instagram_cookies)
+            if not cookies.is_file():
+                raise ValueError("Imported Instagram session file was not found")
+            options["cookiefile"] = str(cookies)
         report(0, "Connecting to Instagram ...")
-        with YoutubeDL(options) as ydl:
-            _check_cancelled(listener)
-            ydl.extract_info(url, download=True)
+        try:
+            with YoutubeDL(options) as ydl:
+                _check_cancelled(listener)
+                ydl.extract_info(url, download=True)
+        except Exception as exc:
+            message = str(exc).lower()
+            if ("can't be seen by certain audiences" in message
+                    or "content isn't available to everyone" in message):
+                raise RuntimeError(
+                    "Instagram restricted this Reel to certain viewers. "
+                    "If your signed-in Instagram account can play it, import "
+                    "that account's Netscape cookies.txt in Insta Saver and retry. "
+                    "An account without viewing permission cannot download it."
+                ) from None
+            if "requested format is not available" in message:
+                # Safe diagnostics: do not log cookies, signed media URLs,
+                # account identifiers, or the extracted video metadata.
+                # Format enumeration uses the SAME opt-in cookie session.
+                _check_cancelled(listener)
+                try:
+                    inspection_options = dict(options)
+                    inspection_options["format"] = "all"
+                    inspection_options["skip_download"] = True
+                    with YoutubeDL(inspection_options) as probe:
+                        details = probe.extract_info(url, download=False) or {}
+                    formats = details.get("formats") or []
+                    video_formats = [
+                        item for item in formats if
+                        item.get("vcodec") != "none"
+                        and item.get("ext") in ("mp4", "webm", "mkv", "mov")
+                    ]
+                    audio_only = sum(
+                        1 for item in formats
+                        if item.get("vcodec") == "none"
+                        and item.get("acodec") not in (None, "none")
+                    )
+                    diagnostics = (
+                        "yt-dlp exposed {} total formats, {} possible video formats "
+                        "and {} audio-only formats."
+                    ).format(len(formats), len(video_formats), audio_only)
+                    if not video_formats:
+                        diagnostics += (
+                            " No usable video stream was returned; verify the Reel "
+                            "plays in the same browser account. Instagram may also "
+                            "be blocking extraction."
+                        )
+                    else:
+                        # Keep only a short, non-sensitive list of types for logs.
+                        types = sorted(set(str(item.get("ext") or "unknown")
+                                           for item in video_formats))
+                        diagnostics += " Video containers: {}.".format(
+                            ", ".join(types[:5]))
+                except DownloadCancelled:
+                    raise
+                except Exception:
+                    diagnostics = (
+                        "Could not enumerate Instagram video formats. "
+                        "The login session or extraction may be blocked."
+                    )
+                raise RuntimeError("Instagram format selection failed. " + diagnostics) from None
+            raise
         _check_cancelled(listener)
         videos = [p for p in directory.glob(prefix + "*")
                   if p.is_file() and p.suffix.lower() in _VIDEO and p.stat().st_size > 0]
         if not videos:
-            raise RuntimeError("No combined video/audio format available (FFmpeg is not bundled)")
+            raise RuntimeError("No compatible video file found after extraction")
         selected = max(videos, key=lambda p: p.stat().st_mtime)
         retained.add(selected)
         return str(selected)
