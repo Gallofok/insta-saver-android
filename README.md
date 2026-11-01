@@ -4,6 +4,14 @@ Experimental **on-device** Instagram Reel and **YouTube Shorts** downloader for 
 The native Java interface invokes embedded Python **yt-dlp** through Chaquopy.
 **No Media Saver server** is needed.
 
+## YouTube stream 403 recovery (v0.3.9)
+
+- v0.3.8 sometimes found suitable Shorts media formats but the YouTube content-delivery endpoint then returned **HTTP 403 Forbidden** when downloading the actual bytes.
+- v0.3.9 keeps the blue UI, Instagram Cookie handling, local media browser, and permanent APK signature unchanged. On a stream-specific 403, it removes only this in-progress download's temporary files and tries the alternate **Android** YouTube client once; it will not repeatedly retry the same unavailable stream.
+- If the Android client also returns 403 (or no suitable format), it reports a sanitized account/network/JS-challenge diagnostic and stops. Errors unrelated to media stream 403, such as DNS errors, are not incorrectly retried as client failures.
+- This is a bounded recovery attempt, **not** guaranteed YouTube compatibility: some formats require yt-dlp-ejs/JavaScript runtime or may be blocked by YouTube's delivery endpoints. It does not bypass videos the viewer isn't permitted to access.
+- Stable-signed test build: `fix/shorts-403-recovery-v039-20261101` versionCode 12/versionName 0.3.9, install as an **update** over v0.3.8.
+
 ## Shorts compatibility hotfix (v0.3.8)
 
 - This update retains the approved blue interface, Instagram authentication, offline gallery and permanent signing identity.
