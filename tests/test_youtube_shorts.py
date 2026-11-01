@@ -96,8 +96,8 @@ class ShortsUrlTests(unittest.TestCase):
                 return self
             def __exit__(self, *args):
                 pass
-            def extract_info(self, url, download):
-                seen.append((url, download, self.options["format"]))
+            def extract_info(self, url, download, process=True):
+                seen.append((url, download, self.options.get("format"), process))
                 if not download:
                     return {"formats": [
                         {"format_id": "18", "ext": "mp4", "vcodec": "avc1.42001E",
@@ -109,8 +109,8 @@ class ShortsUrlTests(unittest.TestCase):
                 path = Path(download_video(SAMPLE_SHORTS, directory))
                 self.assertTrue(path.is_file())
                 self.assertTrue(path.name.startswith("shorts_"))
-        self.assertEqual(seen[0], (NORMALIZED_SHORTS, False, "all"))
-        self.assertEqual(seen[1], (NORMALIZED_SHORTS, True, "18"))
+        self.assertEqual(seen[0], (NORMALIZED_SHORTS, False, None, False))
+        self.assertEqual(seen[1], (NORMALIZED_SHORTS, True, "18", True))
 
     def test_mock_split_download_returns_tracks_and_cleans_sidecars(self):
         seen = []
@@ -121,7 +121,7 @@ class ShortsUrlTests(unittest.TestCase):
                 return self
             def __exit__(self, *args):
                 pass
-            def extract_info(self, url, download):
+            def extract_info(self, url, download, process=True):
                 if not download:
                     return {"formats": [
                         {"format_id": "137", "ext": "mp4", "vcodec": "avc1.640028",
@@ -142,6 +142,82 @@ class ShortsUrlTests(unittest.TestCase):
                 self.assertEqual(sorted(p.suffix for p in Path(directory).iterdir()),
                                  [".m4a", ".mp4"])
         self.assertEqual(seen, ["137", "140"])
+
+
+    def test_fallback_to_android_when_default_has_no_formats(self):
+        seen = []
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def extract_info(self, url, download, process=True):
+                client = (self.opts.get("extractor_args") or {}).get(
+                    "youtube", {}).get("player_client")
+                seen.append((client, download, process))
+                if not download:
+                    if not client:
+                        return {"formats": []}
+                    return {"formats": [
+                        {"format_id": "18", "ext": "mp4", "vcodec": "avc1",
+                         "acodec": "mp4a.40.2", "url": "https://example.test/18"}
+                    ]}
+                self.assert_from_android = client == ["android"]
+                if not self.assert_from_android:
+                    raise RuntimeError("Wrong player client")
+                Path(self.opts["outtmpl"].replace("%(ext)s", "mp4")).write_bytes(b"ok")
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as directory:
+                result = download_video(
+                    "https://m.youtube.com/shorts/J5He-tp7LAU", directory)
+                self.assertTrue(Path(result).is_file())
+        self.assertEqual(seen, [
+            (None, False, False),
+            (["android"], False, False),
+            (["android"], True, True)
+        ])
+
+    def test_no_client_formats_reports_safe_counts(self):
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def extract_info(self, url, download, process=True):
+                self.assert_probe = not download and process is False
+                if not self.assert_probe:
+                    raise RuntimeError("unexpected download")
+                return {"formats": []}
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(RuntimeError, "0 total, 0 accessible") as cm:
+                    download_video(SAMPLE_SHORTS, directory)
+                self.assertIn("JavaScript runtime", str(cm.exception))
+                self.assertNotIn("https://", str(cm.exception))
+
+    def test_download_format_disappears_has_helpful_error(self):
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def extract_info(self, url, download, process=True):
+                if not download:
+                    return {"formats": [
+                        {"format_id": "18", "ext": "mp4", "vcodec": "avc1",
+                         "acodec": "mp4a.40.2", "url": "https://example.test/18"}
+                    ]}
+                raise RuntimeError("Requested format is not available")
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(RuntimeError, "between inspection and download"):
+                    download_video(SAMPLE_SHORTS, directory)
 
 
 if __name__ == "__main__":

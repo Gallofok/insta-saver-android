@@ -4,6 +4,15 @@ Experimental **on-device** Instagram Reel and **YouTube Shorts** downloader for 
 The native Java interface invokes embedded Python **yt-dlp** through Chaquopy.
 **No Media Saver server** is needed.
 
+## Shorts compatibility hotfix (v0.3.8)
+
+- This update retains the approved blue interface, Instagram authentication, offline gallery and permanent signing identity.
+- For YouTube Shorts, the diagnostic pass now retrieves **unprocessed format metadata** rather than setting `format=all`, which could fail before format inspection.
+- If the default YouTube player clients produce no Android-compatible combined stream or AVC/HEVC MP4 + AAC/M4A pair, the downloader tries the alternative `android` player client once. This is not a guarantee: YouTube may restrict some players or formats, and the app still does not bundle a JavaScript runtime / EJS challenge solver.
+- Errors and progress show bounded format counts and whether a fallback client was attempted. The app does **not** log signed media links, authorization headers or Cookie values.
+- Extra offline regression tests cover the fallback, empty format lists, and a format vanishing between inspection and download.
+- Install this update using a **stable-signed APK**, built from branch `fix/shorts-format-diagnostics-v038-20261101` with `versionCode 11` / `versionName 0.3.8`. This should update v0.3.7 directly without uninstalling.
+
 ## Blue UI test release (v0.3.7)
 
 This branch changes **presentation only** and preserves the existing downloader behavior, supported URL rules, Instagram Cookie file handling, offline media gallery, Android video player, permissions, and permanent signing setup.
