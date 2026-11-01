@@ -701,7 +701,13 @@ public class MainActivity extends Activity {
                 String cookiePath = source.toLowerCase(Locale.ROOT).contains("instagram.com/")
                         && instagramCookiesFile().isFile()
                         ? instagramCookiesFile().getAbsolutePath() : null;
-                PyObject value = module.callAttr("download_video", source, cache.getAbsolutePath(), callback, cookiePath);
+                // Android 10+ cannot execute downloaded binaries from writable
+                // app storage. Bundled NDK QuickJS is extracted to nativeLibraryDir.
+                String jsRuntime = source.toLowerCase(Locale.ROOT).contains("youtube.com/")
+                        ? new File(getApplicationInfo().nativeLibraryDir, "libqjs.so").getAbsolutePath()
+                        : null;
+                PyObject value = module.callAttr("download_video",
+                        source, cache.getAbsolutePath(), callback, cookiePath, jsRuntime);
                 String result = value.toString();
                 if (result.startsWith("{")) {
                     JSONObject parts = new JSONObject(result);
