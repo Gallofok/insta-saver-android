@@ -701,7 +701,13 @@ public class MainActivity extends Activity {
                 String cookiePath = source.toLowerCase(Locale.ROOT).contains("instagram.com/")
                         && instagramCookiesFile().isFile()
                         ? instagramCookiesFile().getAbsolutePath() : null;
-                PyObject value = module.callAttr("download_video", source, cache.getAbsolutePath(), callback, cookiePath);
+                // Android 10+ cannot execute downloaded binaries from writable
+                // app storage. Bundled NDK QuickJS is extracted to nativeLibraryDir.
+                String jsRuntime = source.toLowerCase(Locale.ROOT).contains("youtube.com/")
+                        ? new File(getApplicationInfo().nativeLibraryDir, "libqjs.so").getAbsolutePath()
+                        : null;
+                PyObject value = module.callAttr("download_video",
+                        source, cache.getAbsolutePath(), callback, cookiePath, jsRuntime);
                 String result = value.toString();
                 if (result.startsWith("{")) {
                     JSONObject parts = new JSONObject(result);
@@ -766,6 +772,13 @@ public class MainActivity extends Activity {
                 if (cancelled) return;
                 progressBar.setProgress((int) Math.max(0, Math.min(99, percent)));
                 status(message);
+                // Only safe, bounded engine diagnostics are copied into the
+                // debug log. Never log signed YouTube stream URLs or cookies.
+                if (message.startsWith("YouTube JavaScript runtime:")
+                        || message.startsWith("YouTube default:")
+                        || message.startsWith("YouTube android:")) {
+                    log(message);
+                }
             });
         }
     }

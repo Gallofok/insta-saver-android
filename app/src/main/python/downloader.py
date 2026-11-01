@@ -97,7 +97,7 @@ def choose_shorts_formats(formats):
     )
 
 
-def download_shorts(url, directory, prefix, listener, report, check_cancelled):
+def download_shorts(url, directory, prefix, listener, report, check_cancelled, js_runtime_path=None):
     """Download a Short with a bounded fallback if the CDN refuses a stream.
 
     The metadata probe deliberately avoids yt-dlp's early format selection.
@@ -116,6 +116,26 @@ def download_shorts(url, directory, prefix, listener, report, check_cancelled):
         "socket_timeout": 30,
         "cachedir": False,
     }
+
+    # yt-dlp-ejs is packaged via yt-dlp[default] in the Android build.
+    # An executable QuickJS-NG is shipped in Android's nativeLibraryDir;
+    # do not execute binaries copied into writable app-private folders.
+    if js_runtime_path and Path(js_runtime_path).is_file():
+        base_options["js_runtimes"] = {
+            "quickjs": {"path": str(js_runtime_path)}
+        }
+        # Verify that the companion EJS package is actually installed. This
+        # doesn't guarantee the external binary can run on the device.
+        from importlib.metadata import PackageNotFoundError, version
+        try:
+            ejs_version = version("yt-dlp-ejs")
+            report(0, "YouTube JavaScript runtime: QuickJS bundled; EJS {}".format(
+                ejs_version))
+        except PackageNotFoundError:
+            report(0, "YouTube JavaScript runtime: QuickJS bundled; EJS scripts missing.")
+    else:
+        report(0, "YouTube JavaScript runtime not found; some streams may return 403.")
+
     outcomes = []
     saw_403 = False
     saw_format_change = False
@@ -239,7 +259,7 @@ def download_shorts(url, directory, prefix, listener, report, check_cancelled):
         "yt-dlp-ejs; some Shorts cannot be extracted. Check playback in your "
         "browser and try another network.".format(summary))
 
-def download_video(raw_url, output_dir, listener=None, instagram_cookies=None):
+def download_video(raw_url, output_dir, listener=None, instagram_cookies=None, js_runtime_path=None):
     from yt_dlp import YoutubeDL
     url, platform = normalize_supported_url(raw_url)
     directory = Path(output_dir)
@@ -287,7 +307,7 @@ def download_video(raw_url, output_dir, listener=None, instagram_cookies=None):
         if platform == "shorts":
             output = download_shorts(
                 url, directory, prefix, listener, report,
-                lambda: _check_cancelled(listener))
+                lambda: _check_cancelled(listener), js_runtime_path)
             if output.startswith("{"):
                 import json
                 separate = json.loads(output)

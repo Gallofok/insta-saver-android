@@ -318,5 +318,60 @@ class ShortsUrlTests(unittest.TestCase):
         self.assertEqual(events, [None, None])
 
 
+    def test_quickjs_path_is_used_for_shorts_only(self):
+        options_seen = []
+        class FakeYoutubeDL:
+            def __init__(self, options):
+                self.options = options
+                options_seen.append(options)
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def extract_info(self, url, download, process=True):
+                if not download:
+                    return {"formats": [
+                        {"format_id": "18", "ext": "mp4", "vcodec": "avc1",
+                         "acodec": "mp4a.40.2", "url": "https://example.test/18"}
+                    ]}
+                Path(self.options["outtmpl"].replace("%(ext)s", "mp4")).write_bytes(b"okay")
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as directory:
+                runtime = Path(directory, "libqjs.so")
+                runtime.write_bytes(b"fake ELF placeholder")
+                video = download_video(
+                    SAMPLE_SHORTS, directory, None, None, str(runtime))
+                self.assertTrue(Path(video).exists())
+                self.assertGreaterEqual(len(options_seen), 2)
+                for opts in options_seen:
+                    self.assertEqual(opts["js_runtimes"], {
+                        "quickjs": {"path": str(runtime)}
+                    })
+
+    def test_missing_quickjs_does_not_break_legacy_downloader(self):
+        seen = []
+        class FakeYoutubeDL:
+            def __init__(self, options):
+                self.options = options
+                seen.append(options)
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def extract_info(self, url, download, process=True):
+                if not download:
+                    return {"formats": [
+                        {"format_id": "18", "ext": "mp4", "vcodec": "avc1",
+                         "acodec": "mp4a.40.2", "url": "https://example.test/18"}
+                    ]}
+                Path(self.options["outtmpl"].replace("%(ext)s", "mp4")).write_bytes(b"okay")
+        with patch.dict(sys.modules, {"yt_dlp": types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)}):
+            with tempfile.TemporaryDirectory() as directory:
+                video = download_video(
+                    SAMPLE_SHORTS, directory, None, None, str(Path(directory, "missing")))
+                self.assertTrue(Path(video).exists())
+        self.assertTrue(all("js_runtimes" not in opts for opts in seen))
+
+
 if __name__ == "__main__":
     unittest.main()
