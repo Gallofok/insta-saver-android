@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, 'feat/cancel-and-cleanup-20261030', 'fix/instagram-cookie-import-20261031', 'feat/in-app-download-gallery-20261031', 'fix/gallery-permissions-20261031', 'fix/stable-apk-signing-20261031', 'feat/blue-ui-v037-20261101', 'fix/shorts-format-diagnostics-v038-20261101']
+    branches: [main, 'feat/cancel-and-cleanup-20261030', 'fix/instagram-cookie-import-20261031', 'feat/in-app-download-gallery-20261031', 'fix/gallery-permissions-20261031', 'fix/stable-apk-signing-20261031', 'feat/blue-ui-v037-20261101', 'fix/shorts-format-diagnostics-v038-20261101', 'fix/shorts-403-recovery-v039-20261101']
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,6 +24,11 @@ jobs:
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Build Android QuickJS runtime
+        shell: bash
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'ndk;27.2.12479018'
+          bash .github/scripts/build-quickjs-android.sh
       - name: Python offline unit tests
         run: python -m unittest discover -s tests -v
       - uses: gradle/actions/setup-gradle@v4
@@ -61,6 +66,11 @@ jobs:
       - name: Build debug APK
         # CI's PR/push builds have neither keystore nor its derived password.
         run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Verify QuickJS Android executable packaged
+        shell: bash
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" list app/build/outputs/apk/debug/app-debug.apk |
+            grep -F 'lib/arm64-v8a/libqjs.so'
       - name: Verify stable APK signature
         if: github.event_name == 'workflow_dispatch'
         shell: bash
